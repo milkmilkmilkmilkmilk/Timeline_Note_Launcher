@@ -1,0 +1,773 @@
+// Timeline Note Launcher - Data Layer
+import { App, TFile, CachedMetadata, normalizePath } from 'obsidian';
+import {
+	PluginSettings,
+	NoteReviewLog,
+	ReviewLogs,
+	TimelineCard,
+	LinkedNote,
+	DifficultyRating,
+	PreviewMode,
+	FileType,
+	DailyReviewHistory,
+	DEFAULT_REVIEW_LOG,
+	getTodayString,
+} from './types';
+
+/** 画像拡張子 */
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'avif'];
+
+/** PDF拡張子 */
+const PDF_EXTENSIONS = ['pdf'];
+
+/** 音声拡張子 */
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma'];
+
+/** 動画拡張子 */
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv'];
+
+/**
+ * 拡張子からファイルタイプを判定
+ */
+export function getFileType(extension: string): FileType {
+	const ext = extension.toLowerCase();
+	if (ext === 'md') return 'markdown';
+	if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
+	if (PDF_EXTENSIONS.includes(ext)) return 'pdf';
+	if (AUDIO_EXTENSIONS.includes(ext)) return 'audio';
+	if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+	return 'other';
+}
+
+/**
+ * 対象ファイルを列挙・フィルタリングする
+ */
+export function enumerateTargetNotes(
+	app: App,
+	settings: PluginSettings
+): TFile[] {
+	const allFiles = app.vault.getFiles();
+
+	return allFiles.filter(file => {
+		// フォルダフィルタ
+		if (settings.targetFolders.length > 0) {
+			const inFolder = settings.targetFolders.some(folder =>
+				file.path.startsWith(folder + '/') || file.path === folder
+			);
+			if (!inFolder) return false;
+		}
+
+		// タグフィルタ（マークダウンファイルのみ適用）
+		if (settings.targetTags.length > 0) {
+			const fileType = getFileType(file.extension);
+			if (fileType === 'markdown') {
+				const cache = app.metadataCache.getFileCache(file);
+				const fileTags = extractTags(cache);
+				const hasTag = settings.targetTags.some(tag =>
+					fileTags.includes(tag) || fileTags.includes('#' + tag)
+				);
+				if (!hasTag) return false;
+			} else {
+				// 非マークダウンファイルはタグフィルタ時に除外
+				return false;
+			}
+		}
+
+		return true;
+	});
+}
+
+/**
+ * CachedMetadataからタグを抽出
+ */
+function extractTags(cache: CachedMetadata | null): string[] {
+	if (!cache) return [];
+
+	const tags: string[] = [];
+
+	// frontmatterのtags
+	if (cache.frontmatter?.tags) {
+		const fmTags = cache.frontmatter.tags;
+		if (Array.isArray(fmTags)) {
+			tags.push(...fmTags.map(t => String(t)));
+		} else if (typeof fmTags === 'string') {
+			tags.push(fmTags);
+		}
+	}
+
+	// インラインタグ
+	if (cache.tags) {
+		tags.push(...cache.tags.map(t => t.tag));
+	}
+
+	return tags;
+}
+
+/**
+ * ノートからpinned状態を取得（YAML frontmatter）
+ */
+function isPinned(cache: CachedMetadata | null): boolean {
+	return cache?.frontmatter?.pinned === true;
+}
+
+/**
+ * YAMLから数値を読み取る
+ */
+function getYamlNumber(cache: CachedMetadata | null, key: string): number | null {
+	if (!cache?.frontmatter || !key) return null;
+	const value = cache.frontmatter[key];
+	if (typeof value === 'number') return value;
+	if (typeof value === 'string') {
+		const parsed = parseFloat(value);
+		return isNaN(parsed) ? null : parsed;
+	}
+	return null;
+}
+
+/**
+ * アウトゴーイングリンク（このノートから他のノートへのリンク）を抽出
+ */
+export function extractOutgoingLinks(
+	app: App,
+	file: TFile,
+	cache: CachedMetadata | null
+): LinkedNote[] {
+	if (!cache?.links) return [];
+
+	const links: LinkedNote[] = [];
+	const seen = new Set<string>();
+
+	for (const link of cache.links) {
+		const linkedFile = app.metadataCache.getFirstLinkpathDest(link.link, file.path);
+		if (linkedFile && linkedFile instanceof TFile && !seen.has(linkedFile.path)) {
+			seen.add(linkedFile.path);
+			links.push({
+				path: linkedFile.path,
+				title: linkedFile.basename,
+			});
+		}
+	}
+
+	return links;
+}
+
+/**
+ * バックリンク（他のノートからこのノートへのリンク）を抽出
+ */
+export function extractBacklinks(
+	app: App,
+	file: TFile
+): LinkedNote[] {
+	const backlinks: LinkedNote[] = [];
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const resolvedLinks = (app.metadataCache as any).resolvedLinks;
+
+	if (!resolvedLinks) return backlinks;
+
+	for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
+		if (sourcePath === file.path) continue;
+
+		const targetLinks = links as Record<string, number>;
+		if (targetLinks[file.path]) {
+			const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
+			if (sourceFile && sourceFile instanceof TFile) {
+				backlinks.push({
+					path: sourceFile.path,
+					title: sourceFile.basename,
+				});
+			}
+		}
+	}
+
+	return backlinks;
+}
+
+/**
+ * ノートから最初の画像パスを抽出
+ */
+export function extractFirstImage(
+	app: App,
+	file: TFile,
+	content: string
+): string | null {
+	// Obsidian内部リンク形式: ![[image.png]] または ![[image.png|alt]]
+	const wikiImageMatch = content.match(/!\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+	if (wikiImageMatch && wikiImageMatch[1]) {
+		const imageName = wikiImageMatch[1];
+		// ファイルを解決
+		const imageFile = app.metadataCache.getFirstLinkpathDest(imageName, file.path);
+		if (imageFile) {
+			return imageFile.path;
+		}
+	}
+
+	// Markdown形式: ![alt](path)
+	const mdImageMatch = content.match(/!\[[^\]]*\]\(([^)]+)\)/);
+	if (mdImageMatch && mdImageMatch[1]) {
+		const imagePath = mdImageMatch[1];
+		// 外部URLの場合
+		if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+			return imagePath;
+		}
+		// 内部パスを解決
+		const imageFile = app.metadataCache.getFirstLinkpathDest(imagePath, file.path);
+		if (imageFile) {
+			return imageFile.path;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * ノートのプレビューテキストを取得
+ */
+export async function getPreviewText(
+	app: App,
+	file: TFile,
+	mode: PreviewMode,
+	lines: number
+): Promise<string> {
+	const content = await app.vault.cachedRead(file);
+
+	// frontmatterをスキップ
+	let body = content;
+	if (content.startsWith('---')) {
+		const endIndex = content.indexOf('---', 3);
+		if (endIndex !== -1) {
+			body = content.slice(endIndex + 3).trim();
+		}
+	}
+
+	// 空行を除いた行配列
+	const lineArray = body.split('\n').filter(l => l.trim() !== '');
+
+	// モードに応じて表示行数を決定
+	let displayLines: number;
+	switch (mode) {
+		case 'full':
+			displayLines = lineArray.length;
+			break;
+		case 'half':
+			displayLines = Math.ceil(lineArray.length / 2);
+			break;
+		case 'lines':
+		default:
+			displayLines = lines;
+			break;
+	}
+
+	return lineArray.slice(0, displayLines).join('\n');
+}
+
+/**
+ * TFileからTimelineCardを生成
+ */
+export async function createTimelineCard(
+	app: App,
+	file: TFile,
+	reviewLog: NoteReviewLog | undefined,
+	settings: PluginSettings
+): Promise<TimelineCard> {
+	const log = reviewLog ?? DEFAULT_REVIEW_LOG;
+	const now = Date.now();
+	const fileType = getFileType(file.extension);
+
+	// 新規カード判定（一度もレビューしていない）
+	const isNew = log.reviewCount === 0;
+
+	// 期限到来判定
+	const isDue = log.nextReviewAt !== null && log.nextReviewAt <= now;
+
+	// マークダウンファイルの場合
+	if (fileType === 'markdown') {
+		const cache = app.metadataCache.getFileCache(file);
+		const content = await app.vault.cachedRead(file);
+		const preview = await getPreviewText(app, file, settings.previewMode, settings.previewLines);
+
+		// 最初の画像を抽出
+		const firstImagePath = extractFirstImage(app, file, content);
+
+		// リンク情報を抽出
+		const outgoingLinks = extractOutgoingLinks(app, file, cache);
+		const backlinks = extractBacklinks(app, file);
+
+		// YAML読み取り
+		const yamlDifficulty = getYamlNumber(cache, settings.yamlDifficultyKey);
+		const yamlPriority = getYamlNumber(cache, settings.yamlPriorityKey);
+
+		return {
+			path: file.path,
+			title: file.basename,
+			preview,
+			fileType,
+			extension: file.extension,
+			firstImagePath,
+			outgoingLinks,
+			backlinks,
+			lastReviewedAt: log.lastReviewedAt,
+			reviewCount: log.reviewCount,
+			pinned: isPinned(cache),
+			tags: extractTags(cache),
+			// SRS
+			nextReviewAt: log.nextReviewAt,
+			difficulty: log.difficulty,
+			interval: log.interval,
+			isNew,
+			isDue,
+			// YAML
+			yamlDifficulty,
+			yamlPriority,
+		};
+	}
+
+	// 非マークダウンファイルの場合
+	let preview = '';
+	let firstImagePath: string | null = null;
+
+	switch (fileType) {
+		case 'image':
+			preview = `📷 ${file.extension.toUpperCase()} image`;
+			firstImagePath = file.path;  // 画像ファイル自身をサムネイルとして使用
+			break;
+		case 'pdf':
+			preview = `📄 PDF document`;
+			break;
+		case 'audio':
+			preview = `🎵 ${file.extension.toUpperCase()} audio`;
+			break;
+		case 'video':
+			preview = `🎬 ${file.extension.toUpperCase()} video`;
+			break;
+		default:
+			preview = `📁 ${file.extension.toUpperCase()} file`;
+			break;
+	}
+
+	// バックリンクを抽出（非マークダウンでもリンクされている可能性がある）
+	const backlinks = extractBacklinks(app, file);
+
+	return {
+		path: file.path,
+		title: file.basename,
+		preview,
+		fileType,
+		extension: file.extension,
+		firstImagePath,
+		outgoingLinks: [],
+		backlinks,
+		lastReviewedAt: log.lastReviewedAt,
+		reviewCount: log.reviewCount,
+		pinned: false,
+		tags: [],
+		// SRS
+		nextReviewAt: log.nextReviewAt,
+		difficulty: log.difficulty,
+		interval: log.interval,
+		isNew,
+		isDue,
+		// YAML
+		yamlDifficulty: null,
+		yamlPriority: null,
+	};
+}
+
+/**
+ * レビューログを更新（通常のレビュー）
+ */
+export function updateReviewLog(
+	logs: ReviewLogs,
+	path: string
+): ReviewLogs {
+	const now = Date.now();
+	const existing = logs[path] ?? { ...DEFAULT_REVIEW_LOG };
+
+	return {
+		...logs,
+		[path]: {
+			...existing,
+			lastReviewedAt: now,
+			reviewCount: existing.reviewCount + 1,
+		},
+	};
+}
+
+/**
+ * SM-2アルゴリズムに基づいてレビューログを更新
+ */
+export function updateReviewLogWithSRS(
+	logs: ReviewLogs,
+	path: string,
+	rating: DifficultyRating,
+	settings: PluginSettings
+): ReviewLogs {
+	const now = Date.now();
+	const existing = logs[path] ?? { ...DEFAULT_REVIEW_LOG };
+
+	// 難易度に応じた品質スコア（0-5）
+	const qualityScore = getQualityScore(rating);
+
+	// 新しい易しさ係数を計算（SM-2）
+	let newEaseFactor = existing.easeFactor + (0.1 - (5 - qualityScore) * (0.08 + (5 - qualityScore) * 0.02));
+	newEaseFactor = Math.max(1.3, newEaseFactor);  // 最小1.3
+
+	// 新しい間隔を計算
+	let newInterval: number;
+	if (rating === 'again') {
+		// 再度：間隔をリセット
+		newInterval = 0;
+	} else if (existing.interval === 0) {
+		// 初回正解
+		newInterval = settings.initialInterval;
+	} else if (existing.interval === settings.initialInterval) {
+		// 2回目正解
+		newInterval = 6;
+	} else {
+		// 3回目以降
+		newInterval = Math.round(existing.interval * newEaseFactor);
+	}
+
+	// Easyボーナス
+	if (rating === 'easy') {
+		newInterval = Math.round(newInterval * settings.easyBonus);
+	}
+
+	// Hardは間隔を短縮
+	if (rating === 'hard') {
+		newInterval = Math.round(newInterval * 0.8);
+	}
+
+	// 次回レビュー日を計算
+	const nextReviewAt = rating === 'again'
+		? now + 10 * 60 * 1000  // 10分後に再度
+		: now + newInterval * 24 * 60 * 60 * 1000;
+
+	return {
+		...logs,
+		[path]: {
+			lastReviewedAt: now,
+			reviewCount: existing.reviewCount + 1,
+			nextReviewAt,
+			difficulty: existing.difficulty,  // YAMLで上書き可能
+			interval: newInterval,
+			easeFactor: newEaseFactor,
+		},
+	};
+}
+
+/**
+ * 難易度評価から品質スコアを取得
+ */
+function getQualityScore(rating: DifficultyRating): number {
+	switch (rating) {
+		case 'again': return 0;
+		case 'hard': return 2;
+		case 'good': return 4;
+		case 'easy': return 5;
+	}
+}
+
+/**
+ * 次回レビューまでの推定間隔を取得
+ */
+export function getNextIntervals(
+	log: NoteReviewLog | undefined,
+	settings: PluginSettings
+): { again: string; hard: string; good: string; easy: string } {
+	const existing = log ?? { ...DEFAULT_REVIEW_LOG };
+
+	if (existing.interval === 0) {
+		// 新規カード
+		return {
+			again: '10m',
+			hard: `${settings.initialInterval}d`,
+			good: `${settings.initialInterval}d`,
+			easy: `${Math.round(settings.initialInterval * settings.easyBonus)}d`,
+		};
+	}
+
+	const ef = existing.easeFactor;
+	const baseInterval = existing.interval === settings.initialInterval ? 6 : Math.round(existing.interval * ef);
+
+	return {
+		again: '10m',
+		hard: `${Math.round(baseInterval * 0.8)}d`,
+		good: `${baseInterval}d`,
+		easy: `${Math.round(baseInterval * settings.easyBonus)}d`,
+	};
+}
+
+/**
+ * 古いログをクリーンアップ
+ */
+export function cleanupOldLogs(
+	logs: ReviewLogs,
+	retentionDays: number
+): ReviewLogs {
+	const cutoff = Date.now() - (retentionDays * 24 * 60 * 60 * 1000);
+	const cleaned: ReviewLogs = {};
+
+	for (const [path, log] of Object.entries(logs)) {
+		if (log.lastReviewedAt && log.lastReviewedAt > cutoff) {
+			cleaned[path] = log;
+		}
+	}
+
+	return cleaned;
+}
+
+/**
+ * ノートの末尾にコメントをCallout形式で追加
+ */
+export async function appendCommentToNote(
+	app: App,
+	file: TFile,
+	comment: string
+): Promise<void> {
+	const now = new Date();
+	const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+	// コメントの各行を引用形式に変換
+	const commentLines = comment.split('\n').map(line => `> ${line}`).join('\n');
+
+	// Callout形式で追記
+	const calloutContent = `\n\n> [!comment] ${timestamp}\n${commentLines}`;
+
+	await app.vault.append(file, calloutContent);
+}
+
+/**
+ * 引用ノートノートを作成
+ */
+export async function createQuoteNote(
+	app: App,
+	originalFile: TFile,
+	quotedTexts: string[],
+	title: string,
+	comment: string,
+	template: string
+): Promise<TFile> {
+	const now = new Date();
+
+	// タイムスタンプ形式のファイル名を生成（YYYYMMDDHHmmss）
+	const uid = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+
+	// 日付文字列（YYYY-MM-DD）
+	const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+	// 複数の引用テキストを結合（各引用をCallout形式で）
+	const formattedQuotedText = quotedTexts
+		.map(text => {
+			// 各引用テキストを > プレフィックス付きに変換
+			return text
+				.split('\n')
+				.map(line => `> ${line}`)
+				.join('\n');
+		})
+		.join('\n>\n');  // 引用間に空行を入れる
+
+	// テンプレート変数を置換
+	const content = template
+		.replace(/\{\{uid\}\}/g, uid)
+		.replace(/\{\{title\}\}/g, title)
+		.replace(/\{\{date\}\}/g, dateStr)
+		.replace(/\{\{originalNote\}\}/g, originalFile.basename)
+		.replace(/\{\{quotedText\}\}/g, formattedQuotedText)
+		.replace(/\{\{comment\}\}/g, comment);
+
+	// 元ノートと同じフォルダにファイルを作成
+	const folderPath = originalFile.parent?.path ?? '';
+	const newFilePath = normalizePath(folderPath ? `${folderPath}/${uid}.md` : `${uid}.md`);
+
+	// ファイルを作成
+	const newFile = await app.vault.create(newFilePath, content);
+
+	return newFile;
+}
+
+// ===== 統計関連関数 =====
+
+/**
+ * レビュー履歴を記録
+ */
+export function recordReviewToHistory(
+	history: DailyReviewHistory,
+	fileType: FileType,
+	isNew: boolean
+): DailyReviewHistory {
+	const today = getTodayString();
+	const existing = history[today] || {
+		newReviewed: 0,
+		reviewedCount: 0,
+		fileTypes: {
+			markdown: 0,
+			image: 0,
+			pdf: 0,
+			audio: 0,
+			video: 0,
+			other: 0,
+		},
+	};
+
+	return {
+		...history,
+		[today]: {
+			newReviewed: existing.newReviewed + (isNew ? 1 : 0),
+			reviewedCount: existing.reviewedCount + 1,
+			fileTypes: {
+				...existing.fileTypes,
+				[fileType]: existing.fileTypes[fileType] + 1,
+			},
+		},
+	};
+}
+
+/**
+ * 古い履歴をクリーンアップ（30日以上前のデータを削除）
+ */
+export function cleanupOldHistory(
+	history: DailyReviewHistory,
+	retentionDays: number = 30
+): DailyReviewHistory {
+	const cutoffDate = new Date();
+	cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+	const cutoffStr = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')}`;
+
+	const cleaned: DailyReviewHistory = {};
+	for (const [date, data] of Object.entries(history)) {
+		if (date >= cutoffStr) {
+			cleaned[date] = data;
+		}
+	}
+
+	return cleaned;
+}
+
+/**
+ * 統計情報を計算
+ */
+export interface ReviewStatistics {
+	totalNotes: number;
+	reviewedNotes: number;
+	totalReviews: number;
+	dueToday: number;
+	todayReviews: number;
+	todayNewReviews: number;
+	weekReviews: number;
+	monthReviews: number;
+	currentStreak: number;
+	fileTypeBreakdown: {
+		markdown: number;
+		image: number;
+		pdf: number;
+		audio: number;
+		video: number;
+		other: number;
+	};
+	heatmapData: { date: string; count: number }[];
+}
+
+export function calculateStatistics(
+	logs: ReviewLogs,
+	history: DailyReviewHistory
+): ReviewStatistics {
+	const entries = Object.values(logs);
+	const now = Date.now();
+	const today = getTodayString();
+
+	// 基本統計
+	const totalNotes = entries.length;
+	const reviewedNotes = entries.filter(l => l.lastReviewedAt !== null).length;
+	const totalReviews = entries.reduce((sum, l) => sum + l.reviewCount, 0);
+	const dueToday = entries.filter(l => l.nextReviewAt !== null && l.nextReviewAt <= now).length;
+
+	// 今日の統計
+	const todayData = history[today];
+	const todayReviews = todayData?.reviewedCount ?? 0;
+	const todayNewReviews = todayData?.newReviewed ?? 0;
+
+	// 週間統計
+	const weekAgo = new Date();
+	weekAgo.setDate(weekAgo.getDate() - 7);
+	let weekReviews = 0;
+	let monthReviews = 0;
+
+	// 月間統計
+	const monthAgo = new Date();
+	monthAgo.setDate(monthAgo.getDate() - 30);
+
+	// ファイルタイプ別統計（30日間）
+	const fileTypeBreakdown = {
+		markdown: 0,
+		image: 0,
+		pdf: 0,
+		audio: 0,
+		video: 0,
+		other: 0,
+	};
+
+	// ヒートマップデータ（過去30日）
+	const heatmapData: { date: string; count: number }[] = [];
+	const dates: string[] = [];
+	for (let i = 29; i >= 0; i--) {
+		const d = new Date();
+		d.setDate(d.getDate() - i);
+		const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		dates.push(dateStr);
+	}
+
+	for (const dateStr of dates) {
+		const data = history[dateStr];
+		const count = data?.reviewedCount ?? 0;
+		heatmapData.push({ date: dateStr, count });
+
+		// 月間レビュー数を加算
+		monthReviews += count;
+
+		// ファイルタイプ別を加算
+		if (data?.fileTypes) {
+			for (const [type, cnt] of Object.entries(data.fileTypes)) {
+				fileTypeBreakdown[type as keyof typeof fileTypeBreakdown] += cnt;
+			}
+		}
+	}
+
+	// 週間レビュー数（過去7日）
+	for (let i = 0; i < 7; i++) {
+		const d = new Date();
+		d.setDate(d.getDate() - i);
+		const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		weekReviews += history[dateStr]?.reviewedCount ?? 0;
+	}
+
+	// 連続レビュー日数（ストリーク）
+	let currentStreak = 0;
+	for (let i = 0; i <= 365; i++) {
+		const d = new Date();
+		d.setDate(d.getDate() - i);
+		const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+		if (history[dateStr]?.reviewedCount && history[dateStr].reviewedCount > 0) {
+			currentStreak++;
+		} else {
+			// 今日レビューしていない場合は、昨日から数える
+			if (i === 0 && !history[dateStr]?.reviewedCount) {
+				continue;
+			}
+			break;
+		}
+	}
+
+	return {
+		totalNotes,
+		reviewedNotes,
+		totalReviews,
+		dueToday,
+		todayReviews,
+		todayNewReviews,
+		weekReviews,
+		monthReviews,
+		currentStreak,
+		fileTypeBreakdown,
+		heatmapData,
+	};
+}

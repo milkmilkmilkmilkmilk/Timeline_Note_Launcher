@@ -1,90 +1,115 @@
-# Obsidian Sample Plugin
+# Timeline Note Launcher
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+[日本語](README_ja.md) | [中文](README_zh.md)
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+A Twitter-like timeline view for randomly reviewing your notes in Obsidian. Displays note cards in a vertical list with tap-to-open navigation.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## Features
 
-## First time developing plugins?
+- **Timeline View**: Twitter-style vertical feed of your notes as cards
+- **Multiple Selection Modes**:
+  - Random: Pure random selection
+  - Age Priority: Older notes appear more frequently
+  - SRS (Spaced Repetition System): Uses SM-2 algorithm for optimal review intervals
+- **SRS Support**: Rate cards with Again/Hard/Good/Easy buttons, automatically schedules next review
+- **Quote Note**: Create new notes with quoted text from the current note
+- **Comment Feature**: Add timestamped callout comments directly to notes
+- **Filter Bar**: Search by text, filter by file type and tags
+- **Grid/List View Toggle**: Switch between card layouts
+- **Multi-file Support**: Markdown, Images, PDF, Audio, Video
+- **Statistics Dashboard**: Activity heatmap and review statistics
+- **Keyboard Shortcuts**: Navigate efficiently with hotkeys
+- **Color Themes**: Multiple theme options
 
-Quick starting guide for new plugin devs:
+## Installation
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+### From Community Plugins (Recommended)
 
-## Releasing new releases
+1. Open Obsidian Settings
+2. Navigate to Community Plugins and disable Safe Mode
+3. Click Browse and search for "Timeline Note Launcher"
+4. Install and enable the plugin
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### Manual Installation
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
+2. Create a folder `timeline-note-launcher` in your vault's `.obsidian/plugins/` directory
+3. Copy the downloaded files into the folder
+4. Reload Obsidian and enable the plugin in Settings > Community Plugins
 
-## Adding your plugin to the community plugin list
+## Usage
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+### Opening the Timeline
 
-## How to use
+- Click the rocket icon in the left ribbon
+- Or use the command palette: "Timeline Note Launcher: Open Timeline"
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+### Reviewing Notes
 
-## Manually installing the plugin
+1. Cards appear in the timeline based on your selected mode
+2. Click a card to open the note
+3. In SRS mode, rate your recall using the difficulty buttons:
+   - **Again**: Review again in 10 minutes
+   - **Hard**: Shorter interval
+   - **Good**: Normal interval
+   - **Easy**: Longer interval with bonus
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+### Creating Quote Notes
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+1. Open a card in the timeline
+2. Select text you want to quote
+3. Click "Add Quote" to collect selections
+4. Click "Create Quote Note" to generate a new note with your quotes
 
-## Funding URL
+### Adding Comments
 
-You can include funding URLs where people who use your plugin can financially support it.
+1. Click the comment button on a card
+2. Write your comment
+3. The comment is appended as a timestamped callout in the original note
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+## Settings
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
-```
+| Setting | Description |
+|---------|-------------|
+| Target Folders | Folders to include in the timeline (empty = all) |
+| Target Tags | Filter notes by tags |
+| Selection Mode | Random / Age Priority / SRS |
+| Preview Lines | Number of preview lines per card |
+| Auto Refresh | Interval for automatic timeline refresh |
+| New Cards per Day | Maximum new cards in SRS mode |
+| Daily Review Limit | Maximum reviews per day in SRS mode |
+| Initial Interval | First review interval in days |
+| Easy Bonus | Multiplier for Easy rating |
+| Theme | Color theme for the timeline view |
 
-If you have multiple URLs, you can also do:
+## Keyboard Shortcuts
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+| Key | Action |
+|-----|--------|
+| `j` / `ArrowDown` | Next card |
+| `k` / `ArrowUp` | Previous card |
+| `Enter` / `o` | Open selected note |
+| `r` | Refresh timeline |
+| `g` | Toggle grid/list view |
+| `1-4` | Rate card (SRS mode) |
 
-## API Documentation
+## Requirements
 
-See https://docs.obsidian.md
+- Obsidian v0.15.0 or later
+
+## Known Limitations
+
+- PDF preview is not available on mobile
+- Large vaults may experience slower initial load times
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## Author
+
+usumi
+
+## Support
+
+If you encounter issues or have feature requests, please open an issue on the [GitHub repository](https://github.com/usumi/timeline-note-launcher).

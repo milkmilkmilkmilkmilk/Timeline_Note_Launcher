@@ -1,6 +1,11 @@
 import esbuild from "esbuild";
 import process from "process";
 import { builtinModules } from 'node:module';
+import chokidar from "chokidar";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const banner =
 `/*
@@ -15,6 +20,7 @@ const context = await esbuild.context({
 	banner: {
 		js: banner,
 	},
+	absWorkingDir: __dirname,
 	entryPoints: ["src/main.ts"],
 	bundle: true,
 	external: [
@@ -45,5 +51,33 @@ if (prod) {
 	await context.rebuild();
 	process.exit(0);
 } else {
-	await context.watch();
+	// 初回ビルド
+	await context.rebuild();
+	console.log("Initial build complete. Watching for changes in src/...");
+
+	// srcディレクトリのみを監視
+	const watcher = chokidar.watch(path.join(__dirname, "src"), {
+		ignoreInitial: true,
+		awaitWriteFinish: {
+			stabilityThreshold: 100,
+			pollInterval: 50,
+		},
+	});
+
+	watcher.on("all", async (event, filePath) => {
+		console.log(`[${event}] ${path.relative(__dirname, filePath)}`);
+		try {
+			await context.rebuild();
+			console.log("Build complete.");
+		} catch (err) {
+			console.error("Build failed:", err.message);
+		}
+	});
+
+	// 終了時のクリーンアップ
+	process.on("SIGINT", async () => {
+		await watcher.close();
+		await context.dispose();
+		process.exit(0);
+	});
 }
