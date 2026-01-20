@@ -19,17 +19,19 @@ export function selectCards(
 	dailyNewReviewed: number = 0,
 	dailyReviewedCount: number = 0
 ): SelectionResult {
+	const maxCards = settings.maxCards || 50;
+
 	switch (mode) {
 		case 'random':
 			return {
-				cards: selectRandom(cards).slice(0, 100),
+				cards: selectRandom(cards).slice(0, maxCards),
 				newCount: cards.filter(c => c.isNew).length,
 				dueCount: cards.filter(c => c.isDue).length,
 			};
 
 		case 'age-priority':
 			return {
-				cards: selectAgePriority(cards).slice(0, 100),
+				cards: selectAgePriority(cards).slice(0, maxCards),
 				newCount: cards.filter(c => c.isNew).length,
 				dueCount: cards.filter(c => c.isDue).length,
 			};
@@ -39,7 +41,7 @@ export function selectCards(
 
 		default:
 			return {
-				cards: selectRandom(cards).slice(0, 100),
+				cards: selectRandom(cards).slice(0, maxCards),
 				newCount: cards.filter(c => c.isNew).length,
 				dueCount: cards.filter(c => c.isDue).length,
 			};
@@ -130,11 +132,18 @@ function selectSRS(
 	const selectedNew = sortedNew.slice(0, remainingNew);
 
 	// 結果をマージ（期限到来 → 新規 → 将来）
-	const result: TimelineCard[] = [
+	const maxCards = settings.maxCards || 50;
+	const combined: TimelineCard[] = [
 		...selectedDue,
 		...selectedNew,
-		...sortedFuture.slice(0, 20),  // 将来のカードは少量だけ表示
 	];
+
+	// 残り枠で将来のカードを追加
+	const remainingSlots = Math.max(0, maxCards - combined.length);
+	const result = [
+		...combined,
+		...sortedFuture.slice(0, remainingSlots),
+	].slice(0, maxCards);
 
 	return {
 		cards: result,
@@ -175,26 +184,18 @@ function calculateAgeWeight(card: TimelineCard, now: number): number {
 }
 
 /**
- * 重み付きシャッフル
+ * 重み付きシャッフル（O(n log n)）
+ * Exponential sortingアルゴリズム: 各アイテムに random^(1/weight) でソートキーを割り当て、
+ * ソートすることで重み付きランダム選択を実現
  */
 function weightedShuffle<T>(items: { card: T; weight: number }[]): { card: T; weight: number }[] {
-	const result: { card: T; weight: number }[] = [];
-	const remaining = [...items];
-
-	while (remaining.length > 0) {
-		const totalWeight = remaining.reduce((sum, item) => sum + item.weight, 0);
-		let random = Math.random() * totalWeight;
-
-		for (let i = 0; i < remaining.length; i++) {
-			const item = remaining[i]!;
-			random -= item.weight;
-			if (random <= 0) {
-				result.push(item);
-				remaining.splice(i, 1);
-				break;
-			}
-		}
-	}
-
-	return result;
+	// 各アイテムにソートキーを付与してソート
+	return items
+		.map(item => ({
+			item,
+			// 重みが大きいほど、この値が大きくなりやすい
+			sortKey: Math.pow(Math.random(), 1 / Math.max(item.weight, 0.001)),
+		}))
+		.sort((a, b) => b.sortKey - a.sortKey)
+		.map(x => x.item);
 }

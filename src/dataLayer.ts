@@ -26,6 +26,52 @@ const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma'];
 /** 動画拡張子 */
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv'];
 
+/** キャッシュのTTL（ミリ秒） */
+const CACHE_TTL = 5000;
+
+/** ブックマークパスのキャッシュ */
+let bookmarkedPathsCache: { paths: Set<string>; timestamp: number } | null = null;
+
+/**
+ * ブックマークされているファイルパスを取得（キャッシュ付き）
+ */
+export function getBookmarkedPaths(app: App): Set<string> {
+	const now = Date.now();
+
+	// キャッシュが有効ならそれを返す
+	if (bookmarkedPathsCache && now - bookmarkedPathsCache.timestamp < CACHE_TTL) {
+		return bookmarkedPathsCache.paths;
+	}
+
+	// キャッシュを再構築
+	const paths = new Set<string>();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+	const bookmarksPlugin = (app as any).internalPlugins?.plugins?.bookmarks;
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+	if (bookmarksPlugin?.enabled && bookmarksPlugin?.instance) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+		const items = bookmarksPlugin.instance.items || [];
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		for (const item of items as any[]) {
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+			if (item.type === 'file' && item.path) {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+				paths.add(item.path);
+			}
+		}
+	}
+
+	bookmarkedPathsCache = { paths, timestamp: now };
+	return paths;
+}
+
+/**
+ * ブックマークキャッシュをクリア（ブックマーク変更時に呼び出す）
+ */
+export function clearBookmarkCache(): void {
+	bookmarkedPathsCache = null;
+}
+
 /**
  * 拡張子からファイルタイプを判定
  */
@@ -49,6 +95,14 @@ export function enumerateTargetNotes(
 	const allFiles = app.vault.getFiles();
 
 	return allFiles.filter(file => {
+		// 除外フォルダフィルタ
+		if (settings.excludeFolders.length > 0) {
+			const inExcludedFolder = settings.excludeFolders.some(folder =>
+				file.path.startsWith(folder + '/') || file.path === folder
+			);
+			if (inExcludedFolder) return false;
+		}
+
 		// フォルダフィルタ
 		if (settings.targetFolders.length > 0) {
 			const inFolder = settings.targetFolders.some(folder =>
@@ -152,12 +206,59 @@ export function extractOutgoingLinks(
 }
 
 /**
+ * バックリンクインデックスの型
+ */
+export type BacklinkIndex = Map<string, LinkedNote[]>;
+
+/**
+ * バックリンクインデックスを構築（O(n)で一度に全ファイルのバックリンクを計算）
+ */
+export function buildBacklinkIndex(app: App): BacklinkIndex {
+	const index: BacklinkIndex = new Map();
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
+	const resolvedLinks = (app.metadataCache as any).resolvedLinks;
+
+	if (!resolvedLinks) return index;
+
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+	for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
+		const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
+		if (!sourceFile || !(sourceFile instanceof TFile)) continue;
+
+		const targetLinks = links as Record<string, number>;
+		for (const targetPath of Object.keys(targetLinks)) {
+			if (targetPath === sourcePath) continue;
+
+			let backlinks = index.get(targetPath);
+			if (!backlinks) {
+				backlinks = [];
+				index.set(targetPath, backlinks);
+			}
+			backlinks.push({
+				path: sourceFile.path,
+				title: sourceFile.basename,
+			});
+		}
+	}
+
+	return index;
+}
+
+/**
  * バックリンク（他のノートからこのノートへのリンク）を抽出
+ * backlinkIndexが提供された場合はO(1)、そうでなければO(n)
  */
 export function extractBacklinks(
 	app: App,
-	file: TFile
+	file: TFile,
+	backlinkIndex?: BacklinkIndex
 ): LinkedNote[] {
+	// インデックスがあれば高速パス
+	if (backlinkIndex) {
+		return backlinkIndex.get(file.path) || [];
+	}
+
+	// インデックスがない場合は従来の処理（後方互換性）
 	const backlinks: LinkedNote[] = [];
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const resolvedLinks = (app.metadataCache as any).resolvedLinks;
@@ -220,6 +321,37 @@ export function extractFirstImage(
 }
 
 /**
+ * コンテンツ行数をカウント（単一パス、配列生成なし）
+ */
+function countContentLines(content: string, startIndex: number): number {
+	let lines = 0;
+	let inLine = false;
+	let lineHasContent = false;
+
+	for (let i = startIndex; i < content.length; i++) {
+		const char = content[i];
+		if (char === '\n') {
+			if (lineHasContent) {
+				lines++;
+			}
+			inLine = false;
+			lineHasContent = false;
+		} else {
+			inLine = true;
+			if (char !== ' ' && char !== '\t' && char !== '\r') {
+				lineHasContent = true;
+			}
+		}
+	}
+	// 最後の行（改行で終わらない場合）
+	if (inLine && lineHasContent) {
+		lines++;
+	}
+
+	return lines;
+}
+
+/**
  * ノートのプレビューテキストを取得
  */
 export async function getPreviewText(
@@ -231,33 +363,52 @@ export async function getPreviewText(
 	const content = await app.vault.cachedRead(file);
 
 	// frontmatterをスキップ
-	let body = content;
+	let bodyStartIndex = 0;
 	if (content.startsWith('---')) {
-		const endIndex = content.indexOf('---', 3);
+		const endIndex = content.indexOf('\n---', 3);
 		if (endIndex !== -1) {
-			body = content.slice(endIndex + 3).trim();
+			const nextLineIndex = content.indexOf('\n', endIndex + 4);
+			bodyStartIndex = nextLineIndex !== -1 ? nextLineIndex + 1 : content.length;
 		}
 	}
 
-	// 空行を除いた行配列
-	const lineArray = body.split('\n').filter(l => l.trim() !== '');
+	// 全行を保持（改行を維持するため）
+	const body = content.slice(bodyStartIndex);
+	const allLines = body.split('\n');
+
+	// 内容のある行数をカウント（単一パス、配列生成なし）
+	const totalContentLines = countContentLines(body, 0);
 
 	// モードに応じて表示行数を決定
-	let displayLines: number;
+	let targetContentLines: number;
 	switch (mode) {
 		case 'full':
-			displayLines = lineArray.length;
+			targetContentLines = totalContentLines;
 			break;
 		case 'half':
-			displayLines = Math.ceil(lineArray.length / 2);
+			targetContentLines = Math.ceil(totalContentLines / 2);
 			break;
 		case 'lines':
 		default:
-			displayLines = lines;
+			targetContentLines = lines;
 			break;
 	}
 
-	return lineArray.slice(0, displayLines).join('\n');
+	// 内容行をカウントしながら、必要な範囲まで行を取得
+	let contentLineCount = 0;
+	let lastLineIndex = 0;
+	for (let i = 0; i < allLines.length; i++) {
+		if (allLines[i]!.trim() !== '') {
+			contentLineCount++;
+		}
+		if (contentLineCount >= targetContentLines) {
+			lastLineIndex = i;
+			break;
+		}
+		lastLineIndex = i;
+	}
+
+	return allLines.slice(0, lastLineIndex + 1).join('\n');
 }
 
 /**
@@ -267,7 +418,8 @@ export async function createTimelineCard(
 	app: App,
 	file: TFile,
 	reviewLog: NoteReviewLog | undefined,
-	settings: PluginSettings
+	settings: PluginSettings,
+	backlinkIndex?: BacklinkIndex
 ): Promise<TimelineCard> {
 	const log = reviewLog ?? DEFAULT_REVIEW_LOG;
 	const now = Date.now();
@@ -290,7 +442,7 @@ export async function createTimelineCard(
 
 		// リンク情報を抽出
 		const outgoingLinks = extractOutgoingLinks(app, file, cache);
-		const backlinks = extractBacklinks(app, file);
+		const backlinks = extractBacklinks(app, file, backlinkIndex);
 
 		// YAML読み取り
 		const yamlDifficulty = getYamlNumber(cache, settings.yamlDifficultyKey);
@@ -332,6 +484,7 @@ export async function createTimelineCard(
 			break;
 		case 'pdf':
 			preview = `📄 PDF document`;
+			firstImagePath = file.path;  // PDFファイル自身を埋め込み表示用に使用
 			break;
 		case 'audio':
 			preview = `🎵 ${file.extension.toUpperCase()} audio`;
@@ -345,7 +498,7 @@ export async function createTimelineCard(
 	}
 
 	// バックリンクを抽出（非マークダウンでもリンクされている可能性がある）
-	const backlinks = extractBacklinks(app, file);
+	const backlinks = extractBacklinks(app, file, backlinkIndex);
 
 	return {
 		path: file.path,

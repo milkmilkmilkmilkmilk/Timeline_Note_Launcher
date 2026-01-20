@@ -82,6 +82,19 @@
 	font-size: 12px;
 }
 
+/* フッター */
+.timeline-footer {
+	display: flex;
+	justify-content: center;
+	padding: 20px 12px;
+	margin-top: 8px;
+}
+
+.timeline-footer .timeline-refresh-btn {
+	padding: 12px 24px;
+	font-size: 24px;
+}
+
 /* ===== フィルタバー ===== */
 .timeline-filter-bar {
 	display: flex;
@@ -284,7 +297,6 @@
 .timeline-grid-card-thumbnail {
 	position: relative;
 	width: 100%;
-	aspect-ratio: 1;
 	background: var(--background-primary);
 	display: flex;
 	align-items: center;
@@ -294,8 +306,6 @@
 
 .timeline-grid-card-thumbnail img {
 	width: 100%;
-	height: 100%;
-	object-fit: cover;
 	transition: transform 0.2s ease;
 }
 
@@ -409,10 +419,6 @@
 .timeline-mobile .timeline-grid {
 	grid-template-columns: repeat(2, 1fr);
 	gap: 8px;
-}
-
-.timeline-mobile .timeline-grid-card-thumbnail {
-	aspect-ratio: 1;
 }
 
 .timeline-mobile .timeline-grid-card-info {
@@ -604,8 +610,6 @@
 
 .timeline-card-thumbnail img {
 	width: 100%;
-	max-height: 200px;
-	object-fit: cover;
 	display: block;
 	transition: transform 0.2s ease;
 }
@@ -614,22 +618,20 @@
 	transform: scale(1.02);
 }
 
-/* モバイル: サムネイルを少し大きく */
-.timeline-mobile .timeline-card-thumbnail img {
-	max-height: 250px;
-}
-
 /* プレビュー */
 .timeline-card-preview {
 	font-size: 13px;
 	color: var(--text-muted);
 	line-height: 1.5;
 	margin-bottom: 8px;
+	white-space: pre-wrap;
+	word-wrap: break-word;
 }
 
 /* プレビュー内のマークダウン要素 */
 .timeline-card-preview p {
 	margin: 0 0 0.5em 0;
+	white-space: pre-wrap;
 }
 
 .timeline-card-preview p:last-child {
@@ -1736,7 +1738,136 @@
 }
 
 .timeline-card-type-image .timeline-card-thumbnail img {
-	max-height: 300px;
-	object-fit: contain;
 	background: var(--background-modifier-hover);
+}
+
+/* ===== 画像サイズモード ===== */
+
+/* Small (100px) */
+.timeline-image-small .timeline-card-thumbnail img {
+	max-height: 100px;
+	object-fit: cover;
+}
+.timeline-image-small .timeline-grid-card-thumbnail {
+	aspect-ratio: 1;
+}
+.timeline-image-small .timeline-grid-card-thumbnail img {
+	height: 100%;
+	object-fit: cover;
+}
+
+/* Medium (200px) - デフォルト */
+.timeline-image-medium .timeline-card-thumbnail img {
+	max-height: 200px;
+	object-fit: cover;
+}
+.timeline-image-medium .timeline-grid-card-thumbnail {
+	aspect-ratio: 1;
+}
+.timeline-image-medium .timeline-grid-card-thumbnail img {
+	height: 100%;
+	object-fit: cover;
+}
+
+/* Large (400px) */
+.timeline-image-large .timeline-card-thumbnail img {
+	max-height: 400px;
+	object-fit: cover;
+}
+.timeline-image-large .timeline-grid-card-thumbnail {
+	aspect-ratio: 4/3;
+}
+.timeline-image-large .timeline-grid-card-thumbnail img {
+	height: 100%;
+	object-fit: cover;
+}
+
+/* Full (クロップなし) */
+.timeline-image-full .timeline-card-thumbnail img {
+	height: auto;
+	max-height: none;
+}
+.timeline-image-full .timeline-grid-card-thumbnail {
+	aspect-ratio: unset;
+}
+.timeline-image-full .timeline-grid-card-thumbnail img {
+	height: auto;
+}
+
+/* ===== PDF埋め込み表示 ===== */
+
+/* リスト表示のPDF埋め込み */
+.timeline-card-pdf-embed {
+	position: relative;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	overflow: hidden;
+	background: var(--background-primary);
+}
+
+.timeline-card-pdf-embed embed {
+	width: 100%;
+	height: 300px;
+	display: block;
+	border: none;
+	pointer-events: none;
+}
+
+/* メディアサイズモードに応じたPDF高さ */
+.timeline-image-small .timeline-card-pdf-embed embed {
+	height: 100px;
+}
+
+.timeline-image-medium .timeline-card-pdf-embed embed {
+	height: 200px;
+}
+
+.timeline-image-large .timeline-card-pdf-embed embed {
+	height: 400px;
+}
+
+.timeline-image-full .timeline-card-pdf-embed embed {
+	height: 600px;
+}
+
+/* グリッド表示のPDF埋め込み */
+.timeline-grid-card-pdf-embed {
+	position: relative;
+	background: var(--background-primary);
+}
+
+.timeline-grid-card-pdf-embed embed {
+	width: 100%;
+	height: 100%;
+	min-height: 150px;
+	display: block;
+	border: none;
+	pointer-events: none;
+}
+
+/* グリッド表示のPDF - サイズモード対応 */
+.timeline-image-small .timeline-grid-card-pdf-embed {
+	aspect-ratio: 3/4;
+}
+
+.timeline-image-medium .timeline-grid-card-pdf-embed {
+	aspect-ratio: 3/4;
+}
+
+.timeline-image-large .timeline-grid-card-pdf-embed {
+	aspect-ratio: 3/4;
+}
+
+.timeline-image-full .timeline-grid-card-pdf-embed {
+	aspect-ratio: 3/4;
+	min-height: 250px;
+}
+
+/* モバイル向けPDF調整 */
+.timeline-mobile .timeline-card-pdf-embed embed {
+	height: 200px;
+}
+
+.timeline-mobile .timeline-grid-card-pdf-embed {
+	aspect-ratio: 1;
 }

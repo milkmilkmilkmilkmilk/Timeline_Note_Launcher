@@ -1,10 +1,21 @@
 // Timeline Note Launcher - Timeline View
 import { ItemView, WorkspaceLeaf, Platform, TFile, MarkdownRenderer, Component, Menu } from 'obsidian';
-import { TimelineCard, DifficultyRating, ColorTheme, ViewMode } from './types';
-import { getNextIntervals } from './dataLayer';
+import { TimelineCard, DifficultyRating, ColorTheme, ViewMode, ImageSizeMode } from './types';
+import { getNextIntervals, getBookmarkedPaths, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
 import type TimelineNoteLauncherPlugin from './main';
+
+/**
+ * 配列の内容が等しいかを比較
+ */
+function arraysEqual(a: string[], b: string[]): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}
 
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
 
@@ -25,6 +36,12 @@ export class TimelineView extends ItemView {
 	private fileTypeFilters: Set<string> = new Set(['markdown', 'image', 'pdf', 'audio', 'video', 'other']);
 	private selectedTags: Set<string> = new Set();
 	private searchDebounceTimer: number | null = null;
+	// 直前にアクティブだったleaf（タイムライン以外）
+	private previousActiveLeaf: WorkspaceLeaf | null = null;
+	// 差分レンダリング用：前回のカードパス
+	private lastCardPaths: string[] = [];
+	// ブックマークパスのキャッシュ
+	private cachedBookmarkedPaths: Set<string> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: TimelineNoteLauncherPlugin) {
 		super(leaf);
@@ -54,6 +71,21 @@ export class TimelineView extends ItemView {
 		// キーボードショートカット登録
 		this.listContainerEl.tabIndex = 0;
 		this.listContainerEl.addEventListener('keydown', this.keydownHandler);
+
+		// アクティブleafの変更を監視して、タイムライン以外のleafを記録
+		this.registerEvent(
+			this.app.workspace.on('active-leaf-change', (leaf) => {
+				if (leaf && leaf !== this.leaf && leaf.view.getViewType() !== TIMELINE_VIEW_TYPE) {
+					this.previousActiveLeaf = leaf;
+				}
+			})
+		);
+
+		// 現在アクティブなleafを初期値として保存（タイムライン以外）
+		const currentActive = this.app.workspace.getActiveViewOfType(ItemView)?.leaf;
+		if (currentActive && currentActive !== this.leaf && currentActive.view.getViewType() !== TIMELINE_VIEW_TYPE) {
+			this.previousActiveLeaf = currentActive;
+		}
 
 		await this.refresh();
 	}
@@ -118,6 +150,9 @@ export class TimelineView extends ItemView {
 		this.updateMobileClass();
 		this.updateColorTheme();
 
+		// ブックマークキャッシュを更新
+		this.cachedBookmarkedPaths = getBookmarkedPaths(this.app);
+
 		// カードを取得
 		const result = await this.plugin.getTimelineCards();
 		this.cards = result.cards;
@@ -137,12 +172,37 @@ export class TimelineView extends ItemView {
 	 * カード一覧を描画
 	 */
 	private async render(): Promise<void> {
+		// カードパスの変更を検出
+		const newPaths = this.cards.map(c => c.path);
+		const pathsChanged = !arraysEqual(this.lastCardPaths, newPaths);
+
+		// パスが変わっていない場合は完全再構築をスキップ（ヘッダーの統計のみ更新）
+		if (!pathsChanged && this.listContainerEl.hasChildNodes()) {
+			// 統計のみ更新
+			const statsEl = this.listContainerEl.querySelector('.timeline-stats');
+			if (statsEl && this.plugin.data.settings.selectionMode === 'srs') {
+				statsEl.innerHTML = `<span class="timeline-stat-new">${this.newCount} new</span> · <span class="timeline-stat-due">${this.dueCount} due</span>`;
+			}
+			return;
+		}
+
+		// パスを記録
+		this.lastCardPaths = newPaths;
+
 		// 古いレンダリングをクリーンアップ
 		this.renderComponent.unload();
 		this.renderComponent = new Component();
 		this.renderComponent.load();
 
 		this.listContainerEl.empty();
+
+		// 画像サイズモードクラスを適用
+		const imageSizeMode = this.plugin.data.settings.imageSizeMode;
+		const sizeModes: ImageSizeMode[] = ['small', 'medium', 'large', 'full'];
+		for (const mode of sizeModes) {
+			this.listContainerEl.removeClass(`timeline-image-${mode}`);
+		}
+		this.listContainerEl.addClass(`timeline-image-${imageSizeMode}`);
 
 		// ヘッダー
 		const header = this.listContainerEl.createDiv({ cls: 'timeline-header' });
@@ -213,6 +273,14 @@ export class TimelineView extends ItemView {
 			listEl.appendChild(cardEl);
 			this.cardElements.push(cardEl);
 		}
+
+		// 下部リフレッシュボタン
+		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
+		const bottomRefreshBtn = footer.createEl('button', {
+			cls: 'timeline-refresh-btn',
+			text: '↻',
+		});
+		bottomRefreshBtn.addEventListener('click', () => this.refresh());
 
 		// フォーカスインデックスをリセット
 		this.focusedIndex = -1;
@@ -542,22 +610,38 @@ export class TimelineView extends ItemView {
 			bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
 		});
 
-		// サムネイル画像
+		// サムネイル画像 / PDF埋め込み
 		if (card.firstImagePath) {
-			const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail' });
-			if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
-				// 外部URL
-				thumbnailEl.createEl('img', {
-					attr: { src: card.firstImagePath, alt: 'thumbnail' },
-				});
-			} else {
-				// 内部ファイル
-				const imageFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
-				if (imageFile && imageFile instanceof TFile) {
-					const resourcePath = this.app.vault.getResourcePath(imageFile);
-					thumbnailEl.createEl('img', {
-						attr: { src: resourcePath, alt: 'thumbnail' },
+			if (card.fileType === 'pdf') {
+				// PDF埋め込み表示
+				const pdfFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
+				if (pdfFile && pdfFile instanceof TFile) {
+					const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
+					const resourcePath = this.app.vault.getResourcePath(pdfFile);
+					thumbnailEl.createEl('embed', {
+						attr: {
+							src: resourcePath,
+							type: 'application/pdf',
+						},
 					});
+				}
+			} else {
+				// 画像サムネイル
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail' });
+				if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
+					// 外部URL
+					thumbnailEl.createEl('img', {
+						attr: { src: card.firstImagePath, alt: 'thumbnail' },
+					});
+				} else {
+					// 内部ファイル
+					const imageFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
+					if (imageFile && imageFile instanceof TFile) {
+						const resourcePath = this.app.vault.getResourcePath(imageFile);
+						thumbnailEl.createEl('img', {
+							attr: { src: resourcePath, alt: 'thumbnail' },
+						});
+					}
 				}
 			}
 		}
@@ -726,7 +810,20 @@ export class TimelineView extends ItemView {
 		// サムネイル/プレビュー領域
 		const thumbnailEl = cardEl.createDiv({ cls: 'timeline-grid-card-thumbnail' });
 		if (card.firstImagePath) {
-			if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
+			if (card.fileType === 'pdf') {
+				// PDF埋め込み表示
+				thumbnailEl.addClass('timeline-grid-card-pdf-embed');
+				const pdfFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
+				if (pdfFile && pdfFile instanceof TFile) {
+					const resourcePath = this.app.vault.getResourcePath(pdfFile);
+					thumbnailEl.createEl('embed', {
+						attr: {
+							src: resourcePath,
+							type: 'application/pdf',
+						},
+					});
+				}
+			} else if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
 				thumbnailEl.createEl('img', {
 					attr: { src: card.firstImagePath, alt: card.title },
 				});
@@ -844,11 +941,6 @@ export class TimelineView extends ItemView {
 				e.stopPropagation();
 				await this.plugin.rateCard(card.path, btn.rating);
 				container.closest('.timeline-card')?.addClass('timeline-card-reviewed');
-				// 次のカードにフォーカス
-				const nextCard = container.closest('.timeline-card')?.nextElementSibling;
-				if (nextCard) {
-					(nextCard as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-				}
 			});
 		}
 	}
@@ -866,18 +958,36 @@ export class TimelineView extends ItemView {
 			return;
 		}
 
-		// Desktop: タイムライン以外のleafを探して再利用
-		const timelineLeaf = this.leaf;
-		let targetLeaf = this.findAdjacentLeaf(timelineLeaf);
+		// Desktop: 直前にアクティブだったleafの隣に新しいタブとして開く
+		let targetLeaf: WorkspaceLeaf;
 
-		if (targetLeaf) {
-			// 既存のleafでファイルを開く
-			await targetLeaf.openFile(file);
+		if (this.previousActiveLeaf) {
+			// 直前のleafと同じタブグループに新しいタブを作成
+			const parent = this.previousActiveLeaf.parent;
+			if (parent) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				targetLeaf = (this.app.workspace as any).createLeafInParent(parent, -1);
+			} else {
+				targetLeaf = this.app.workspace.getLeaf('tab');
+			}
 		} else {
-			// 隣のleafがなければ、右に分割して開く
-			targetLeaf = this.app.workspace.getLeaf('split');
-			await targetLeaf.openFile(file);
+			// 直前のleafがない場合は、タイムライン以外のleafを探して同じタブグループに開く
+			const adjacentLeaf = this.findAdjacentLeaf(this.leaf);
+			if (adjacentLeaf) {
+				const parent = adjacentLeaf.parent;
+				if (parent) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					targetLeaf = (this.app.workspace as any).createLeafInParent(parent, -1);
+				} else {
+					targetLeaf = this.app.workspace.getLeaf('tab');
+				}
+			} else {
+				// 隣のleafがなければ、右に分割して開く
+				targetLeaf = this.app.workspace.getLeaf('split');
+			}
 		}
+
+		await targetLeaf.openFile(file);
 
 		// フォーカスをノートに移動
 		this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
@@ -941,19 +1051,17 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * ファイルがブックマークされているか確認
+	 * ファイルがブックマークされているか確認（キャッシュ使用）
 	 */
 	private isFileBookmarked(path: string): boolean {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const bookmarksPlugin = (this.app as any).internalPlugins?.plugins?.bookmarks;
-		if (!bookmarksPlugin?.enabled || !bookmarksPlugin?.instance) {
-			return false;
+		// キャッシュがあれば使用（O(1)ルックアップ）
+		if (this.cachedBookmarkedPaths) {
+			return this.cachedBookmarkedPaths.has(path);
 		}
 
-		const items = bookmarksPlugin.instance.items || [];
-		return items.some((item: { type: string; path?: string }) =>
-			item.type === 'file' && item.path === path
-		);
+		// キャッシュがない場合はdataLayerから取得
+		this.cachedBookmarkedPaths = getBookmarkedPaths(this.app);
+		return this.cachedBookmarkedPaths.has(path);
 	}
 
 	/**
@@ -972,19 +1080,27 @@ export class TimelineView extends ItemView {
 			item.type === 'file' && item.path === path
 		);
 
+		let result: boolean;
 		if (existingIndex >= 0) {
 			// 既にブックマークされている場合は削除
 			instance.removeItem(items[existingIndex]);
-			return false;
+			result = false;
 		} else {
 			// ブックマークを追加
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file && file instanceof TFile) {
 				instance.addItem({ type: 'file', path: path, title: '' });
-				return true;
+				result = true;
+			} else {
+				result = false;
 			}
-			return false;
 		}
+
+		// キャッシュをクリア
+		clearBookmarkCache();
+		this.cachedBookmarkedPaths = null;
+
+		return result;
 	}
 
 	/**

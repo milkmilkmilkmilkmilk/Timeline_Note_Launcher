@@ -1,15 +1,44 @@
 // Timeline Note Launcher - Settings Tab
 import { App, PluginSettingTab, Setting, Platform } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { SelectionMode, PreviewMode, ColorTheme, ViewMode, DEFAULT_QUOTE_NOTE_TEMPLATE } from './types';
+import { SelectionMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, DEFAULT_QUOTE_NOTE_TEMPLATE } from './types';
 import { calculateStatistics, ReviewStatistics } from './dataLayer';
+
+/**
+ * デバウンス関数
+ */
+function debounce<T extends (...args: Parameters<T>) => void>(
+	func: T,
+	wait: number
+): (...args: Parameters<T>) => void {
+	let timeout: ReturnType<typeof setTimeout> | null = null;
+	return (...args: Parameters<T>) => {
+		if (timeout !== null) {
+			clearTimeout(timeout);
+		}
+		timeout = setTimeout(() => func(...args), wait);
+	};
+}
 
 export class TimelineSettingTab extends PluginSettingTab {
 	plugin: TimelineNoteLauncherPlugin;
+	private debouncedSave: () => void;
+	private debouncedSaveAndRefresh: () => void;
 
 	constructor(app: App, plugin: TimelineNoteLauncherPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+
+		// デバウンスされた保存関数（500ms遅延）
+		this.debouncedSave = debounce(async () => {
+			await this.plugin.saveData(this.plugin.data);
+		}, 500);
+
+		// デバウンスされた保存＋リフレッシュ関数（500ms遅延）
+		this.debouncedSaveAndRefresh = debounce(async () => {
+			await this.plugin.saveData(this.plugin.data);
+			this.plugin.refreshAllViews();
+		}, 500);
 	}
 
 	display(): void {
@@ -27,12 +56,26 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addText(text => text
 				.setPlaceholder('folder1, folder2/subfolder')
 				.setValue(this.plugin.data.settings.targetFolders.join(', '))
-				.onChange(async (value) => {
+				.onChange((value) => {
 					this.plugin.data.settings.targetFolders = value
 						.split(',')
 						.map(s => s.trim())
 						.filter(s => s.length > 0);
-					await this.plugin.saveData(this.plugin.data);
+					this.debouncedSaveAndRefresh();
+				}));
+
+		new Setting(containerEl)
+			.setName('Exclude folders')
+			.setDesc('Comma-separated folder paths to exclude from timeline')
+			.addText(text => text
+				.setPlaceholder('.obsidian, templates, archive')
+				.setValue(this.plugin.data.settings.excludeFolders.join(', '))
+				.onChange((value) => {
+					this.plugin.data.settings.excludeFolders = value
+						.split(',')
+						.map(s => s.trim())
+						.filter(s => s.length > 0);
+					this.debouncedSaveAndRefresh();
 				}));
 
 		new Setting(containerEl)
@@ -41,12 +84,12 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addText(text => text
 				.setPlaceholder('#tag1, #tag2')
 				.setValue(this.plugin.data.settings.targetTags.join(', '))
-				.onChange(async (value) => {
+				.onChange((value) => {
 					this.plugin.data.settings.targetTags = value
 						.split(',')
 						.map(s => s.trim())
 						.filter(s => s.length > 0);
-					await this.plugin.saveData(this.plugin.data);
+					this.debouncedSaveAndRefresh();
 				}));
 
 		new Setting(containerEl)
@@ -55,9 +98,9 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addText(text => text
 				.setPlaceholder('path:notes OR tag:#important')
 				.setValue(this.plugin.data.settings.searchQuery)
-				.onChange(async (value) => {
+				.onChange((value) => {
 					this.plugin.data.settings.searchQuery = value;
-					await this.plugin.saveData(this.plugin.data);
+					this.debouncedSaveAndRefresh();
 				}));
 
 		// === 選択モード ===
@@ -163,6 +206,21 @@ export class TimelineSettingTab extends PluginSettingTab {
 						this.plugin.refreshAllViews();
 					}));
 		}
+
+		new Setting(containerEl)
+			.setName('Media size')
+			.setDesc('Maximum height for images and PDF embeds')
+			.addDropdown(dropdown => dropdown
+				.addOption('small', 'Small')
+				.addOption('medium', 'Medium')
+				.addOption('large', 'Large')
+				.addOption('full', 'Full')
+				.setValue(this.plugin.data.settings.imageSizeMode)
+				.onChange(async (value) => {
+					this.plugin.data.settings.imageSizeMode = value as ImageSizeMode;
+					await this.plugin.saveData(this.plugin.data);
+					this.plugin.refreshAllViews();
+				}));
 
 		new Setting(containerEl)
 			.setName('Preview mode')
@@ -312,6 +370,20 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		// === 動作設定 ===
 		containerEl.createEl('h3', { text: 'Behavior' });
+
+		new Setting(containerEl)
+			.setName('Max cards')
+			.setDesc('Maximum number of cards to display in timeline (1-500)')
+			.addText(text => text
+				.setPlaceholder('50')
+				.setValue(String(this.plugin.data.settings.maxCards))
+				.onChange(async (value) => {
+					const num = parseInt(value, 10);
+					if (!isNaN(num) && num >= 1 && num <= 500) {
+						this.plugin.data.settings.maxCards = num;
+						await this.plugin.saveData(this.plugin.data);
+					}
+				}));
 
 		new Setting(containerEl)
 			.setName('Auto refresh interval')

@@ -12,6 +12,7 @@ import {
 	recordReviewToHistory,
 	cleanupOldHistory,
 	getFileType,
+	buildBacklinkIndex,
 } from './dataLayer';
 import { selectCards, SelectionResult } from './selectionEngine';
 
@@ -162,14 +163,18 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	async getTimelineCards(): Promise<SelectionResult> {
 		const targetFiles = enumerateTargetNotes(this.app, this.data.settings);
 
-		// カードを生成
+		// バックリンクインデックスを一度に構築（O(n)スキャンを1回に削減）
+		const backlinkIndex = buildBacklinkIndex(this.app);
+
+		// カードを生成（並列処理）
 		const cards = await Promise.all(
 			targetFiles.map(file =>
 				createTimelineCard(
 					this.app,
 					file,
 					this.data.reviewLogs[file.path],
-					this.data.settings
+					this.data.settings,
+					backlinkIndex
 				)
 			)
 		);

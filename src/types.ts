@@ -15,6 +15,9 @@ export type ColorTheme = 'default' | 'blue' | 'green' | 'purple' | 'orange' | 'p
 /** 難易度評価 */
 export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
 
+/** 画像サイズモード */
+export type ImageSizeMode = 'small' | 'medium' | 'large' | 'full';
+
 /** ファイルタイプ */
 export type FileType = 'markdown' | 'image' | 'pdf' | 'audio' | 'video' | 'other';
 
@@ -38,6 +41,7 @@ export interface ReviewLogs {
 export interface PluginSettings {
 	// 対象ノート
 	targetFolders: string[];
+	excludeFolders: string[];
 	targetTags: string[];
 	searchQuery: string;
 
@@ -54,8 +58,10 @@ export interface PluginSettings {
 	enableSplitView: boolean;  // Desktop only
 	showDifficultyButtons: boolean;  // 難易度ボタンを表示
 	mobileViewOnDesktop: boolean;  // PCでモバイル表示を使用
+	imageSizeMode: ImageSizeMode;  // 画像サイズモード
 
 	// 動作設定
+	maxCards: number;            // タイムラインに表示する最大カード数
 	autoRefreshMinutes: number;  // 0 = 手動のみ
 	logRetentionDays: number;
 
@@ -187,6 +193,7 @@ reference: [[{{originalNote}}]]
 /** デフォルト設定 */
 export const DEFAULT_SETTINGS: PluginSettings = {
 	targetFolders: [],
+	excludeFolders: [],
 	targetTags: [],
 	searchQuery: '',
 	selectionMode: 'random',
@@ -199,6 +206,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableSplitView: false,
 	showDifficultyButtons: true,
 	mobileViewOnDesktop: false,
+	imageSizeMode: 'medium',
+	maxCards: 50,
 	autoRefreshMinutes: 0,
 	logRetentionDays: 90,
 	// SRS設定
