@@ -1407,6 +1407,34 @@
 	padding: 6px 10px;
 }
 
+/* ===== リンクノートボタン ===== */
+
+.timeline-link-note-btn {
+	padding: 4px 8px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 16px;
+	color: var(--text-faint);
+	opacity: 0.5;
+	transition: all 0.15s ease;
+	line-height: 1;
+	position: relative;
+}
+
+.timeline-link-note-btn:hover {
+	opacity: 1;
+	color: var(--text-accent);
+	transform: scale(1.1);
+}
+
+/* モバイル: リンクボタンを常に表示 */
+.timeline-mobile .timeline-link-note-btn {
+	opacity: 0.8;
+	font-size: 20px;
+	padding: 6px 10px;
+}
+
 /* ===== 引用ノートモーダル ===== */
 
 .timeline-quote-note-modal {
@@ -1664,6 +1692,253 @@
 .timeline-quote-note-quote-remove:hover {
 	background: var(--background-modifier-error);
 	color: var(--text-on-accent);
+}
+
+/* ===== リンクノートモーダル ===== */
+
+.timeline-link-note-modal {
+	padding: 20px;
+	max-width: 600px;
+}
+
+.timeline-link-note-modal-title {
+	margin: 0 0 16px 0;
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.timeline-link-note-label {
+	display: block;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-muted);
+	margin-bottom: 6px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+/* 既存リンク chips */
+.timeline-link-note-existing-section {
+	margin-bottom: 16px;
+}
+
+.timeline-link-note-existing-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.timeline-link-note-existing-chip {
+	display: inline-block;
+	padding: 3px 10px;
+	border-radius: 12px;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: 12px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+/* 検索 */
+.timeline-link-note-search-section {
+	margin-bottom: 16px;
+}
+
+.timeline-link-note-search-input {
+	width: 100%;
+	padding: 10px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 14px;
+	font-family: var(--font-text);
+}
+
+.timeline-link-note-search-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.timeline-link-note-search-input::placeholder {
+	color: var(--text-faint);
+}
+
+.timeline-link-note-search-results {
+	max-height: 200px;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	margin-top: 8px;
+	background: var(--background-primary);
+}
+
+.timeline-link-note-search-results:empty {
+	display: none;
+}
+
+.timeline-link-note-search-empty {
+	padding: 16px;
+	text-align: center;
+	color: var(--text-faint);
+	font-size: 12px;
+}
+
+.timeline-link-note-search-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	cursor: pointer;
+	transition: background 0.1s ease;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.timeline-link-note-search-item:last-child {
+	border-bottom: none;
+}
+
+.timeline-link-note-search-item:hover {
+	background: var(--background-secondary);
+}
+
+.timeline-link-note-search-item.is-existing {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.timeline-link-note-search-item.is-existing:hover {
+	background: transparent;
+}
+
+.timeline-link-note-search-item-title {
+	font-size: 13px;
+	color: var(--text-normal);
+	font-weight: 500;
+}
+
+.timeline-link-note-search-item-path {
+	font-size: 11px;
+	color: var(--text-faint);
+	flex: 1;
+	text-align: right;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.timeline-link-note-search-item-badge {
+	font-size: 10px;
+	color: var(--text-faint);
+	padding: 1px 6px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+}
+
+/* 選択済みリスト */
+.timeline-link-note-selected-section {
+	margin-bottom: 16px;
+}
+
+.timeline-link-note-selected-list {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	max-height: 150px;
+	overflow-y: auto;
+}
+
+.timeline-link-note-selected-list.timeline-link-note-error {
+	border-color: var(--text-error);
+	animation: shake 0.3s ease-in-out;
+}
+
+.timeline-link-note-selected-empty {
+	padding: 16px;
+	text-align: center;
+	color: var(--text-faint);
+	font-size: 12px;
+}
+
+.timeline-link-note-selected-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.timeline-link-note-selected-item:last-child {
+	border-bottom: none;
+}
+
+.timeline-link-note-selected-number {
+	color: var(--text-accent);
+	font-weight: 600;
+	font-size: 12px;
+	min-width: 20px;
+}
+
+.timeline-link-note-selected-title {
+	flex: 1;
+	font-size: 13px;
+	color: var(--text-normal);
+	word-break: break-word;
+}
+
+.timeline-link-note-selected-remove {
+	padding: 2px 6px;
+	border: none;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	font-size: 14px;
+	line-height: 1;
+	border-radius: 3px;
+	transition: all 0.15s ease;
+}
+
+.timeline-link-note-selected-remove:hover {
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+}
+
+/* ボタン */
+.timeline-link-note-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.timeline-link-note-buttons button {
+	padding: 8px 16px;
+	border-radius: 6px;
+	border: none;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 500;
+	transition: all 0.15s ease;
+}
+
+.timeline-link-note-btn-cancel {
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.timeline-link-note-btn-cancel:hover {
+	background: var(--background-modifier-border);
+	color: var(--text-normal);
+}
+
+.timeline-link-note-btn-confirm {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.timeline-link-note-btn-confirm:hover {
+	filter: brightness(1.1);
 }
 
 /* ===== ファイルタイプ関連スタイル ===== */
@@ -1930,6 +2205,7 @@
 .timeline-container.timeline-ui-twitter .timeline-card .timeline-card-meta,
 .timeline-container.timeline-ui-twitter .timeline-card .timeline-comment-btn,
 .timeline-container.timeline-ui-twitter .timeline-card .timeline-quote-note-btn,
+.timeline-container.timeline-ui-twitter .timeline-card .timeline-link-note-btn,
 .timeline-container.timeline-ui-twitter .timeline-card .timeline-bookmark-btn {
 	display: none;
 }

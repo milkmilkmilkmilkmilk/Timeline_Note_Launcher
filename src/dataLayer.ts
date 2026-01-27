@@ -726,6 +726,21 @@ export async function appendCommentToNote(
 }
 
 /**
+ * ノートの末尾にリンクを追加（Vault設定に準じたリンク形式を使用）
+ */
+export async function appendLinksToNote(
+	app: App,
+	sourceFile: TFile,
+	targetFiles: TFile[]
+): Promise<void> {
+	if (targetFiles.length === 0) return;
+	const linkLines = targetFiles
+		.map(f => app.fileManager.generateMarkdownLink(f, sourceFile.path))
+		.join('\n');
+	await app.vault.append(sourceFile, `\n\n${linkLines}`);
+}
+
+/**
  * 引用ノートノートを作成
  */
 export async function createQuoteNote(

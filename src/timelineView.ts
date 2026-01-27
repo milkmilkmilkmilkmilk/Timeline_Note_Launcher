@@ -4,6 +4,7 @@ import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEF
 import { getNextIntervals, getBookmarkedPaths, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
+import { LinkNoteModal } from './linkNoteModal';
 import type TimelineNoteLauncherPlugin from './main';
 
 /**
@@ -863,6 +864,20 @@ export class TimelineView extends ItemView {
 					modal.open();
 				}
 			});
+
+			// リンクボタン（マークダウンのみ）- Classic用
+			const linkBtn = titleRow.createEl('button', {
+				cls: 'timeline-link-note-btn',
+				attr: { 'aria-label': 'ノートをリンク' },
+			});
+			linkBtn.textContent = '\uD83D\uDD17';
+			linkBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					new LinkNoteModal(this.app, file).open();
+				}
+			});
 		}
 
 		// ブックマークボタン - Classic用
@@ -1064,6 +1079,20 @@ export class TimelineView extends ItemView {
 				if (file && file instanceof TFile) {
 					const modal = new QuoteNoteModal(this.app, this.plugin, file);
 					modal.open();
+				}
+			});
+
+			// リンクアクション（マークダウンのみ）
+			const linkAction = actionsEl.createEl('button', {
+				cls: 'timeline-action-btn timeline-action-link',
+			});
+			linkAction.createSpan({ text: '\uD83D\uDD17' });
+			linkAction.createSpan({ cls: 'timeline-action-label', text: 'Link' });
+			linkAction.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					new LinkNoteModal(this.app, file).open();
 				}
 			});
 		}
@@ -1716,6 +1745,12 @@ export class TimelineView extends ItemView {
 					this.openFocusedQuoteNote();
 				}
 				break;
+			case 'l':
+				if (this.focusedIndex >= 0) {
+					e.preventDefault();
+					this.openFocusedLinkNote();
+				}
+				break;
 			case 'r':
 				e.preventDefault();
 				void this.refresh();
@@ -1870,6 +1905,21 @@ export class TimelineView extends ItemView {
 		if (file && file instanceof TFile) {
 			const modal = new QuoteNoteModal(this.app, this.plugin, file);
 			modal.open();
+		}
+	}
+
+	/**
+	 * フォーカス中のカードのリンクノートモーダルを開く
+	 */
+	private openFocusedLinkNote(): void {
+		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
+
+		const card = this.filteredCards[this.focusedIndex];
+		if (!card || card.fileType !== 'markdown') return;
+
+		const file = this.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			new LinkNoteModal(this.app, file).open();
 		}
 	}
 }
