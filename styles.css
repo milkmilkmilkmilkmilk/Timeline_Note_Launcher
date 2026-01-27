@@ -628,6 +628,12 @@
 	word-wrap: break-word;
 }
 
+/* Fixed lines モード時のプレビュー高さ制約 */
+.timeline-preview-clamped .timeline-card-preview {
+	max-height: var(--preview-max-height, 120px);
+	overflow: hidden;
+}
+
 /* プレビュー内のマークダウン要素 */
 .timeline-card-preview p {
 	margin: 0 0 0.5em 0;
@@ -653,6 +659,7 @@
 .timeline-card-preview ol {
 	margin: 0.3em 0;
 	padding-left: 1.5em;
+	white-space: normal;
 }
 
 .timeline-card-preview li {
@@ -875,6 +882,40 @@
 
 .timeline-mobile .timeline-btn-interval {
 	font-size: 11px;
+}
+
+/* Undoボタン（評価取り消し） */
+.timeline-difficulty-undo {
+	justify-content: center;
+}
+
+.timeline-undo-btn {
+	padding: 8px 24px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 500;
+	transition: all 0.15s ease;
+}
+
+.timeline-undo-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+	border-color: var(--interactive-accent);
+}
+
+/* モバイル: Undoボタンを大きく */
+.timeline-mobile .timeline-undo-btn {
+	padding: 12px 32px;
+	font-size: 15px;
+}
+
+/* Twitter風テーマでのUndoボタン */
+.timeline-ui-twitter .timeline-undo-btn {
+	border-radius: 9999px;
 }
 
 /* 既読マークボタン（難易度ボタン無効時） */
@@ -1256,6 +1297,26 @@
 	box-shadow: 0 0 8px rgba(var(--color-accent-rgb), 0.3);
 }
 
+/* ===== モバイルモーダル - ソフトキーボード対応 ===== */
+
+.timeline-modal-mobile-container {
+	align-items: flex-start;
+}
+
+.timeline-modal-mobile-container .modal {
+	margin-top: env(safe-area-inset-top, 8px);
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+.timeline-modal-mobile-container .timeline-comment-preview-container {
+	max-height: 80px;
+}
+
+.timeline-modal-mobile-container .timeline-quote-note-preview-container {
+	max-height: 100px;
+}
+
 /* ===== コメントモーダル ===== */
 
 .timeline-comment-modal {
@@ -1302,6 +1363,28 @@
 	word-wrap: break-word;
 	font-family: var(--font-monospace);
 	user-select: text;
+}
+
+/* コメントモーダル: ファイル情報表示 */
+.timeline-comment-file-info {
+	padding: 12px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+.timeline-comment-file-info-note {
+	margin-top: 8px;
+	padding: 8px 12px;
+	font-size: 11px;
+	color: var(--text-faint);
+	background: var(--background-secondary);
+	border-radius: 4px;
+	border-left: 3px solid var(--interactive-accent);
 }
 
 .timeline-comment-input-section {
@@ -1359,12 +1442,29 @@
 }
 
 .timeline-comment-btn-save {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background: var(--background-modifier-hover);
+	color: var(--text-faint);
+	cursor: not-allowed;
 }
 
-.timeline-comment-btn-save:hover {
+.timeline-comment-btn-save.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	cursor: pointer;
+	animation: timeline-save-glow 1.5s ease-in-out infinite;
+}
+
+.timeline-comment-btn-save.is-active:hover {
 	filter: brightness(1.1);
+}
+
+@keyframes timeline-save-glow {
+	0%, 100% {
+		box-shadow: 0 0 4px rgba(var(--interactive-accent-rgb), 0.4);
+	}
+	50% {
+		box-shadow: 0 0 12px rgba(var(--interactive-accent-rgb), 0.8);
+	}
 }
 
 /* ===== 引用ノートボタン ===== */
@@ -1503,6 +1603,48 @@
 	color: var(--text-error);
 	border-left-color: var(--text-error);
 	background: rgba(var(--color-red-rgb), 0.1);
+}
+
+/* 引用ノートモーダル: ファイル情報表示 */
+.timeline-quote-note-file-info {
+	padding: 12px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+/* 引用ノートモーダル: 手動引用入力セクション */
+.timeline-quote-note-manual-quote-section {
+	margin-top: 12px;
+}
+
+.timeline-quote-note-manual-textarea {
+	width: 100%;
+	min-height: 80px;
+	padding: 10px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 13px;
+	line-height: 1.5;
+	resize: vertical;
+	font-family: var(--font-text);
+	margin-bottom: 8px;
+}
+
+.timeline-quote-note-manual-textarea:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.timeline-quote-note-manual-textarea::placeholder {
+	color: var(--text-faint);
 }
 
 .timeline-quote-note-input-section {
@@ -2290,6 +2432,73 @@
 	color: var(--text-warning);
 }
 
+/* ヘッダー用アクションボタン（デフォルト非表示、Twitterモードで表示） */
+.timeline-card-header-action {
+	display: none;
+}
+
+.timeline-ui-twitter .timeline-card-header-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px 6px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 14px;
+	color: var(--text-faint);
+	opacity: 0.5;
+	transition: all 0.15s ease;
+	line-height: 1;
+	position: relative;
+}
+
+/* コメントボタンに margin-left: auto を付与してボタン群を右寄せ */
+.timeline-ui-twitter .timeline-card-header-comment {
+	margin-left: auto;
+}
+
+/* アクションボタンがある場合、ブックマークの auto margin を上書き */
+.timeline-ui-twitter .timeline-card-header-action ~ .timeline-card-header-bookmark {
+	margin-left: 0;
+}
+
+/* ホバー時の色 */
+.timeline-ui-twitter .timeline-card-header-action.timeline-card-header-comment:hover {
+	opacity: 1;
+	color: var(--text-accent);
+}
+
+.timeline-ui-twitter .timeline-card-header-action.timeline-card-header-quote:hover {
+	opacity: 1;
+	color: var(--interactive-success, #22c55e);
+}
+
+.timeline-ui-twitter .timeline-card-header-action.timeline-card-header-link:hover {
+	opacity: 1;
+	color: var(--text-accent);
+}
+
+/* ドラフト状態のオレンジドットインジケーター */
+.timeline-ui-twitter .timeline-card-header-action.has-draft::after {
+	content: '';
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 6px;
+	height: 6px;
+	background: var(--text-warning);
+	border-radius: 50%;
+	border: 1px solid var(--background-primary);
+}
+
+/* モバイル向け調整（大きめのタッチターゲット） */
+.timeline-ui-twitter.timeline-mobile .timeline-card-header-action {
+	padding: 6px 8px;
+	font-size: 16px;
+	opacity: 0.7;
+}
+
 /* Twitter風タイトル */
 .timeline-ui-twitter .timeline-card-title-row {
 	margin-bottom: 8px;
@@ -2316,6 +2525,12 @@
 	line-height: 1.5;
 	color: var(--text-normal);
 	margin-bottom: 12px;
+}
+
+/* Twitter風 Fixed lines モード時のプレビュー高さ制約 */
+.timeline-preview-clamped.timeline-ui-twitter .timeline-card-preview {
+	max-height: var(--preview-max-height, 120px);
+	overflow: hidden;
 }
 
 /* Twitter風サムネイル */
