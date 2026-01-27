@@ -1,8 +1,8 @@
 // Timeline Note Launcher - Selection Engine
-import { SelectionMode, TimelineCard, PluginSettings } from './types';
+import { SelectionMode, CandidateCard, PluginSettings } from './types';
 
 export interface SelectionResult {
-	cards: TimelineCard[];
+	selectedPaths: string[];
 	newCount: number;
 	dueCount: number;
 }
@@ -10,10 +10,10 @@ export interface SelectionResult {
 /**
  * 選択エンジン
  * 入力：候補カード＋設定
- * 出力：並び替えられたカード配列＋統計
+ * 出力：選択されたパス配列＋統計
  */
 export function selectCards(
-	cards: TimelineCard[],
+	cards: CandidateCard[],
 	mode: SelectionMode,
 	settings: PluginSettings,
 	dailyNewReviewed: number = 0,
@@ -21,29 +21,34 @@ export function selectCards(
 ): SelectionResult {
 	const maxCards = settings.maxCards || 50;
 
+	// 単一パスで統計を集計
+	let newCount = 0;
+	let dueCount = 0;
+	for (const c of cards) {
+		if (c.isNew) newCount++;
+		if (c.isDue) dueCount++;
+	}
+
 	switch (mode) {
 		case 'random':
 			return {
-				cards: selectRandom(cards).slice(0, maxCards),
-				newCount: cards.filter(c => c.isNew).length,
-				dueCount: cards.filter(c => c.isDue).length,
+				selectedPaths: selectRandom(cards).slice(0, maxCards).map(c => c.path),
+				newCount, dueCount,
 			};
 
 		case 'age-priority':
 			return {
-				cards: selectAgePriority(cards).slice(0, maxCards),
-				newCount: cards.filter(c => c.isNew).length,
-				dueCount: cards.filter(c => c.isDue).length,
+				selectedPaths: selectAgePriority(cards).slice(0, maxCards).map(c => c.path),
+				newCount, dueCount,
 			};
 
 		case 'srs':
-			return selectSRS(cards, settings, dailyNewReviewed, dailyReviewedCount);
+			return selectSRS(cards, settings, dailyNewReviewed, dailyReviewedCount, newCount, dueCount);
 
 		default:
 			return {
-				cards: selectRandom(cards).slice(0, maxCards),
-				newCount: cards.filter(c => c.isNew).length,
-				dueCount: cards.filter(c => c.isDue).length,
+				selectedPaths: selectRandom(cards).slice(0, maxCards).map(c => c.path),
+				newCount, dueCount,
 			};
 	}
 }
@@ -51,7 +56,7 @@ export function selectCards(
 /**
  * モードA: 単純ランダム
  */
-function selectRandom(cards: TimelineCard[]): TimelineCard[] {
+function selectRandom(cards: CandidateCard[]): CandidateCard[] {
 	const shuffled = [...cards];
 
 	// Fisher-Yates shuffle
@@ -69,7 +74,7 @@ function selectRandom(cards: TimelineCard[]): TimelineCard[] {
  * モードB: 古さ優先ランダム
  * lastReviewedAt が古いほど重み↑、pinned に加点
  */
-function selectAgePriority(cards: TimelineCard[]): TimelineCard[] {
+function selectAgePriority(cards: CandidateCard[]): CandidateCard[] {
 	const now = Date.now();
 
 	// 重み付きカード配列を作成
@@ -86,15 +91,22 @@ function selectAgePriority(cards: TimelineCard[]): TimelineCard[] {
  * モードC: SRS（間隔反復）
  */
 function selectSRS(
-	cards: TimelineCard[],
+	cards: CandidateCard[],
 	settings: PluginSettings,
 	dailyNewReviewed: number,
-	dailyReviewedCount: number
+	dailyReviewedCount: number,
+	newCount: number,
+	dueCount: number
 ): SelectionResult {
-	// カードを分類
-	const dueCards = cards.filter(c => c.isDue);
-	const newCards = cards.filter(c => c.isNew);
-	const futureCards = cards.filter(c => !c.isNew && !c.isDue);
+	// 単一パスで分類
+	const dueCards: CandidateCard[] = [];
+	const newCards: CandidateCard[] = [];
+	const futureCards: CandidateCard[] = [];
+	for (const c of cards) {
+		if (c.isDue) dueCards.push(c);
+		else if (c.isNew) newCards.push(c);
+		else futureCards.push(c);
+	}
 
 	// 残りの日次制限を計算
 	const remainingNew = Math.max(0, settings.newCardsPerDay - dailyNewReviewed);
@@ -131,7 +143,7 @@ function selectSRS(
 
 	// 結果をマージ（期限到来 → 新規 → 将来）
 	const maxCards = settings.maxCards || 50;
-	const combined: TimelineCard[] = [
+	const combined: CandidateCard[] = [
 		...selectedDue,
 		...selectedNew,
 	];
@@ -144,16 +156,15 @@ function selectSRS(
 	].slice(0, maxCards);
 
 	return {
-		cards: result,
-		newCount: newCards.length,
-		dueCount: dueCards.length,
+		selectedPaths: result.map(c => c.path),
+		newCount, dueCount,
 	};
 }
 
 /**
  * 古さ重みを計算
  */
-function calculateAgeWeight(card: TimelineCard, now: number): number {
+function calculateAgeWeight(card: CandidateCard, now: number): number {
 	let weight = 1;
 
 	// 古さによる重み（未レビューは最大重み）

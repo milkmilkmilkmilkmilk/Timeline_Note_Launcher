@@ -15,41 +15,44 @@ npm run build        # Production build (tsc type-check + esbuild minified)
 npm run lint         # Run ESLint with obsidianmd plugin rules
 ```
 
+CI runs `npm run build` and `npm run lint` on Node 20.x and 22.x (`.github/workflows/lint.yml`). No automated test suite exists; testing is manual in Obsidian.
+
 ## Architecture
 
 ```
 src/
-├── main.ts           # Plugin entry point (TimelineNoteLauncherPlugin class)
-├── types.ts          # All TypeScript interfaces, types, and defaults
-├── timelineView.ts   # Main UI view (ItemView subclass)
-├── dataLayer.ts      # Data operations, file handling, SRS algorithm
-├── selectionEngine.ts # Card selection/sorting algorithms
-├── settings.ts       # Settings tab UI with statistics dashboard
-├── commentModal.ts   # Modal for adding comments to notes
-└── quoteNoteModal.ts # Modal for creating quote notes
+├── main.ts            # Plugin entry point, lifecycle, command registration
+├── types.ts           # All interfaces, types, defaults, and PluginData schema
+├── timelineView.ts    # Main UI view (ItemView subclass)
+├── dataLayer.ts       # File enumeration, card creation, SRS calculations, statistics
+├── selectionEngine.ts # Card selection/sorting algorithms (random, age-priority, srs)
+├── settings.ts        # Settings tab UI with statistics dashboard
+├── commentModal.ts    # Modal for adding timestamped comments to notes
+├── quoteNoteModal.ts  # Modal for creating quote notes with template substitution
+└── linkNoteModal.ts   # Modal for adding links from one note to others
 ```
 
-### Key Components
+### Data Flow (Two-Phase Card Pipeline)
 
-- **TimelineNoteLauncherPlugin** (`main.ts`): Plugin lifecycle, data persistence via `loadData()`/`saveData()`, command registration, and coordinates view refreshes
-- **TimelineView** (`timelineView.ts`): Custom ItemView rendering timeline cards with list/grid modes, filter bar, keyboard navigation (j/k/1-4/r/b/c/q), difficulty rating buttons, and tracks `previousActiveLeaf` to open notes in the correct tab group
-- **SelectionEngine** (`selectionEngine.ts`): Implements three selection modes with configurable `maxCards` limit:
-  - `random`: Fisher-Yates shuffle
-  - `age-priority`: Weighted random favoring older/unreviewed notes
-  - `srs`: SM-2 spaced repetition with daily limits
-- **DataLayer** (`dataLayer.ts`): File enumeration with folder include/exclude filters, card creation, preview text extraction (preserves line breaks), SRS calculations, statistics aggregation
+Selection operates on lightweight candidates to avoid unnecessary file I/O:
 
-### Data Flow
+1. `enumerateTargetNotes()` filters vault files by folder/tag/exclude settings → `TFile[]`
+2. `createCandidateCard()` builds lightweight cards (sync, no file reads) → `CandidateCard[]`
+3. `selectCards()` applies selection mode algorithm with `maxCards` limit → `SelectionResult`
+4. `createTimelineCard()` fetches full content for selected cards only (async) → `TimelineCard[]`
+5. `TimelineView` renders DOM with chunk-based rendering (5 cards per batch via DocumentFragment)
+6. Rating buttons trigger `rateCard()` → `updateReviewLogWithSRS()` → save
 
-1. `enumerateTargetNotes()` filters vault files by folder/tag/exclude settings
-2. `createTimelineCard()` generates card objects with preview, links, SRS state
-3. `selectCards()` applies selection mode algorithm with `maxCards` limit
-4. `TimelineView.render()` creates DOM elements with size mode classes
-5. Rating buttons trigger `rateCard()` → `updateReviewLogWithSRS()` → save
+### Rendering Optimizations
+
+- **Differential rendering**: Skips DOM rebuild if card paths are unchanged (stat-only updates)
+- **Chunk processing**: 5 cards per chunk with `Promise.all()` for parallel creation
+- **DOM batching**: DocumentFragment before appendChild
+- **Caching**: Backlink index (10s TTL), bookmarked paths (5s TTL)
 
 ### Plugin Data Structure
 
-Persisted in `data.json`:
+Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 - `settings`: User preferences (selection mode, SRS params, display options, `excludeFolders`, `maxCards`, `imageSizeMode`)
 - `reviewLogs`: Per-note SRS state (interval, easeFactor, nextReviewAt)
 - `dailyStats`: Today's review counts
@@ -65,10 +68,14 @@ Persisted in `data.json`:
 
 ## Key Development Notes
 
-- External packages (`obsidian`, `electron`, CodeMirror) are provided by Obsidian at runtime
+- External packages (`obsidian`, `electron`, CodeMirror) are provided by Obsidian at runtime and marked as externals in esbuild config
 - Use `this.register*` methods for cleanup-safe event listeners
 - Add commands with stable IDs (don't rename after release)
-- `Platform.isMobile` for mobile-specific behavior
-- TypeScript strict mode enabled
+- `Platform.isMobile` for mobile-specific behavior; `mobileViewOnDesktop` setting enables mobile layout on desktop for testing
+- TypeScript strict mode: `noImplicitAny`, `strictNullChecks`, `noUncheckedIndexedAccess` all enabled
 - When adding new settings: update `PluginSettings` interface, `DEFAULT_SETTINGS`, and settings UI in `settings.ts`
-- PDF files are displayed using interactive `<embed>` elements with an "Open" button overlay for navigation
+- PDF files are displayed using interactive `<embed>` elements with an "Open" button overlay
+- Source comments are in Japanese; maintain this convention
+- ESLint uses `eslint-plugin-obsidianmd` with rules for settings headings, sentence case, and no static styles assignment
+- Modal patterns: all modals accept a `plugin` reference (typed as `import type` from `main`), store drafts in plugin data, and support keyboard shortcuts (Ctrl+Enter to confirm)
+- Link generation uses `app.fileManager.generateMarkdownLink()` to respect the user's wikilink vs markdown link preference

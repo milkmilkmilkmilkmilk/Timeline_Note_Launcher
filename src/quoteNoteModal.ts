@@ -1,11 +1,13 @@
 // Timeline Note Launcher - Quote Note Modal
-import { App, Modal, TFile } from 'obsidian';
+import { App, Modal, Platform, TFile } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { createQuoteNote } from './dataLayer';
+import { createQuoteNote, getFileType, isTextReadableFile } from './dataLayer';
+import type { FileType } from './types';
 
 export class QuoteNoteModal extends Modal {
 	private plugin: TimelineNoteLauncherPlugin;
 	private file: TFile;
+	private fileType: FileType;
 	private noteContent: string = '';
 	private previewEl: HTMLPreElement;
 	private selectionPreviewEl: HTMLElement;
@@ -19,14 +21,14 @@ export class QuoteNoteModal extends Modal {
 		super(app);
 		this.plugin = plugin;
 		this.file = file;
+		this.fileType = getFileType(file.extension);
 	}
 
 	async onOpen(): Promise<void> {
 		const { contentEl } = this;
 		contentEl.addClass('timeline-quote-note-modal');
 
-		// ノート内容を読み込み
-		this.noteContent = await this.app.vault.cachedRead(this.file);
+		const isTextReadable = isTextReadableFile(this.fileType);
 
 		// タイトル
 		contentEl.createEl('h3', {
@@ -36,34 +38,75 @@ export class QuoteNoteModal extends Modal {
 
 		// ノートプレビューセクション
 		const previewSection = contentEl.createDiv({ cls: 'timeline-quote-note-preview-section' });
-		previewSection.createEl('label', {
-			text: '元ノートの内容（テキスト選択で引用範囲を指定）',
-			cls: 'timeline-quote-note-label',
-		});
 
-		const previewContainer = previewSection.createDiv({ cls: 'timeline-quote-note-preview-container' });
-		this.previewEl = previewContainer.createEl('pre', {
-			cls: 'timeline-quote-note-preview',
-		});
-		this.previewEl.textContent = this.noteContent;
+		if (isTextReadable) {
+			// テキスト読取可能: 既存のテキスト選択UI
+			this.noteContent = await this.app.vault.cachedRead(this.file);
+			previewSection.createEl('label', {
+				text: '元ノートの内容（テキスト選択で引用範囲を指定）',
+				cls: 'timeline-quote-note-label',
+			});
 
-		// 選択テキストプレビュー + 追加ボタン
-		const selectionRow = previewSection.createDiv({ cls: 'timeline-quote-note-selection-row' });
+			const previewContainer = previewSection.createDiv({ cls: 'timeline-quote-note-preview-container' });
+			this.previewEl = previewContainer.createEl('pre', {
+				cls: 'timeline-quote-note-preview',
+			});
+			this.previewEl.textContent = this.noteContent;
 
-		this.selectionPreviewEl = selectionRow.createDiv({
-			cls: 'timeline-quote-note-selection-preview',
-		});
-		this.updateSelectionPreview();
+			// 選択テキストプレビュー + 追加ボタン
+			const selectionRow = previewSection.createDiv({ cls: 'timeline-quote-note-selection-row' });
 
-		const addBtn = selectionRow.createEl('button', {
-			text: '追加',
-			cls: 'timeline-quote-note-add-btn',
-		});
-		// mousedownを使用して、クリック時に選択が解除される前に処理する
-		addBtn.addEventListener('mousedown', (e) => {
-			e.preventDefault(); // 選択解除を防ぐ
-			this.addCurrentSelection();
-		});
+			this.selectionPreviewEl = selectionRow.createDiv({
+				cls: 'timeline-quote-note-selection-preview',
+			});
+			this.updateSelectionPreview();
+
+			const addBtn = selectionRow.createEl('button', {
+				text: '追加',
+				cls: 'timeline-quote-note-add-btn',
+			});
+			// mousedownを使用して、クリック時に選択が解除される前に処理する
+			addBtn.addEventListener('mousedown', (e) => {
+				e.preventDefault(); // 選択解除を防ぐ
+				this.addCurrentSelection();
+			});
+		} else {
+			// バイナリファイル: ファイル情報 + 手動テキスト入力
+			previewSection.createEl('label', {
+				text: 'ファイル情報',
+				cls: 'timeline-quote-note-label',
+			});
+			const fileInfoEl = previewSection.createDiv({ cls: 'timeline-quote-note-file-info' });
+			fileInfoEl.createDiv({ text: `ファイル名: ${this.file.name}` });
+			fileInfoEl.createDiv({ text: `種類: ${this.fileType.toUpperCase()}` });
+			fileInfoEl.createDiv({ text: `パス: ${this.file.path}` });
+
+			// 手動引用入力セクション
+			const manualSection = previewSection.createDiv({ cls: 'timeline-quote-note-manual-quote-section' });
+			manualSection.createEl('label', {
+				text: '引用テキストを入力',
+				cls: 'timeline-quote-note-label',
+			});
+			const manualTextarea = manualSection.createEl('textarea', {
+				cls: 'timeline-quote-note-manual-textarea',
+				attr: {
+					placeholder: '引用するテキストをここに入力...',
+					rows: '3',
+				},
+			});
+			const addBtn = manualSection.createEl('button', {
+				text: '追加',
+				cls: 'timeline-quote-note-add-btn',
+			});
+			addBtn.addEventListener('click', () => {
+				const text = manualTextarea.value.trim();
+				if (!text) return;
+				if (this.selectedTexts.includes(text)) return;
+				this.selectedTexts.push(text);
+				manualTextarea.value = '';
+				this.renderQuotesList();
+			});
+		}
 
 		// 選択済み引用リスト
 		const quotesSection = previewSection.createDiv({ cls: 'timeline-quote-note-quotes-section' });
@@ -132,8 +175,10 @@ export class QuoteNoteModal extends Modal {
 			void this.createNote();
 		});
 
-		// テキスト選択イベント
-		document.addEventListener('selectionchange', this.handleSelectionChange);
+		// テキスト選択イベント（テキスト読取可能時のみ）
+		if (isTextReadable) {
+			document.addEventListener('selectionchange', this.handleSelectionChange);
+		}
 
 		// Enter + Ctrl/Cmd で作成
 		this.commentTextArea.addEventListener('keydown', (e) => {
@@ -142,6 +187,21 @@ export class QuoteNoteModal extends Modal {
 				void this.createNote();
 			}
 		});
+
+		// モバイル: キーボード表示時にモーダルを上に配置
+		if (Platform.isMobile) {
+			this.containerEl.addClass('timeline-modal-mobile-container');
+			this.commentTextArea.addEventListener('focus', () => {
+				setTimeout(() => {
+					this.commentTextArea.scrollIntoView({ block: 'center', behavior: 'smooth' });
+				}, 300);
+			});
+			this.titleInput.addEventListener('focus', () => {
+				setTimeout(() => {
+					this.titleInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+				}, 300);
+			});
+		}
 
 		// フォーカスをコメント入力欄に移動
 		this.commentTextArea.focus();
@@ -216,9 +276,12 @@ export class QuoteNoteModal extends Modal {
 		this.quotesListEl.empty();
 
 		if (this.selectedTexts.length === 0) {
+			const emptyText = isTextReadableFile(this.fileType)
+				? '引用がまだありません。テキストを選択して「追加」をクリックしてください。'
+				: '引用がまだありません。テキストを入力して「追加」をクリックしてください。';
 			this.quotesListEl.createDiv({
 				cls: 'timeline-quote-note-quotes-empty',
-				text: '引用がまだありません。テキストを選択して「追加」をクリックしてください。',
+				text: emptyText,
 			});
 			return;
 		}

@@ -1,26 +1,27 @@
 // Timeline Note Launcher - Comment Modal
-import { App, Modal, TFile } from 'obsidian';
+import { App, Modal, Platform, TFile } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { appendCommentToNote } from './dataLayer';
+import { appendCommentToNote, getFileType, isTextReadableFile } from './dataLayer';
+import type { FileType } from './types';
 
 export class CommentModal extends Modal {
 	private plugin: TimelineNoteLauncherPlugin;
 	private file: TFile;
+	private fileType: FileType;
 	private textArea: HTMLTextAreaElement;
+	private saveBtn: HTMLButtonElement;
 	private noteContent: string = '';
 
 	constructor(app: App, plugin: TimelineNoteLauncherPlugin, file: TFile) {
 		super(app);
 		this.plugin = plugin;
 		this.file = file;
+		this.fileType = getFileType(file.extension);
 	}
 
 	async onOpen(): Promise<void> {
 		const { contentEl } = this;
 		contentEl.addClass('timeline-comment-modal');
-
-		// ノート内容を読み込み
-		this.noteContent = await this.app.vault.cachedRead(this.file);
 
 		// タイトル
 		contentEl.createEl('h3', {
@@ -30,16 +31,34 @@ export class CommentModal extends Modal {
 
 		// ノートプレビューセクション
 		const previewSection = contentEl.createDiv({ cls: 'timeline-comment-preview-section' });
-		previewSection.createEl('label', {
-			text: 'ノートの内容',
-			cls: 'timeline-comment-label',
-		});
 
-		const previewContainer = previewSection.createDiv({ cls: 'timeline-comment-preview-container' });
-		const previewEl = previewContainer.createEl('pre', {
-			cls: 'timeline-comment-preview',
-		});
-		previewEl.textContent = this.noteContent;
+		if (isTextReadableFile(this.fileType)) {
+			// テキスト読取可能: 既存のテキストプレビュー
+			this.noteContent = await this.app.vault.cachedRead(this.file);
+			previewSection.createEl('label', {
+				text: 'ノートの内容',
+				cls: 'timeline-comment-label',
+			});
+			const previewContainer = previewSection.createDiv({ cls: 'timeline-comment-preview-container' });
+			const previewEl = previewContainer.createEl('pre', {
+				cls: 'timeline-comment-preview',
+			});
+			previewEl.textContent = this.noteContent;
+		} else {
+			// バイナリファイル: ファイル情報を表示
+			previewSection.createEl('label', {
+				text: 'ファイル情報',
+				cls: 'timeline-comment-label',
+			});
+			const fileInfoEl = previewSection.createDiv({ cls: 'timeline-comment-file-info' });
+			fileInfoEl.createDiv({ text: `ファイル名: ${this.file.name}` });
+			fileInfoEl.createDiv({ text: `種類: ${this.fileType.toUpperCase()}` });
+			fileInfoEl.createDiv({ text: `パス: ${this.file.path}` });
+			previewSection.createDiv({
+				cls: 'timeline-comment-file-info-note',
+				text: 'コメントはコンパニオンノートに保存されます',
+			});
+		}
 
 		// コメント入力セクション
 		const commentSection = contentEl.createDiv({ cls: 'timeline-comment-input-section' });
@@ -73,12 +92,17 @@ export class CommentModal extends Modal {
 			this.close();
 		});
 
-		const saveBtn = buttonSection.createEl('button', {
+		this.saveBtn = buttonSection.createEl('button', {
 			text: '保存',
 			cls: 'timeline-comment-btn timeline-comment-btn-save',
 		});
-		saveBtn.addEventListener('click', () => {
+		this.saveBtn.addEventListener('click', () => {
 			void this.saveComment();
+		});
+
+		// テキスト入力に応じて保存ボタンの状態を更新
+		this.textArea.addEventListener('input', () => {
+			this.updateSaveButtonState();
 		});
 
 		// Enter + Ctrl/Cmd で保存
@@ -88,6 +112,19 @@ export class CommentModal extends Modal {
 				void this.saveComment();
 			}
 		});
+
+		// モバイル: キーボード表示時にモーダルを上に配置
+		if (Platform.isMobile) {
+			this.containerEl.addClass('timeline-modal-mobile-container');
+			this.textArea.addEventListener('focus', () => {
+				setTimeout(() => {
+					this.textArea.scrollIntoView({ block: 'center', behavior: 'smooth' });
+				}, 300);
+			});
+		}
+
+		// 保存ボタンの初期状態を設定
+		this.updateSaveButtonState();
 
 		// フォーカスをテキストエリアに移動
 		this.textArea.focus();
@@ -99,14 +136,19 @@ export class CommentModal extends Modal {
 		void this.plugin.saveCommentDraft(this.file.path, comment);
 	}
 
+	private updateSaveButtonState(): void {
+		const hasContent = this.textArea.value.trim().length > 0;
+		this.saveBtn.toggleClass('is-active', hasContent);
+	}
+
 	private async saveComment(): Promise<void> {
 		const comment = this.textArea.value.trim();
 		if (!comment) {
 			return;
 		}
 
-		// ノートにコメントを追記
-		await appendCommentToNote(this.app, this.file, comment);
+		// ノートにコメントを追記（非マークダウンはコンパニオンノートへ）
+		await appendCommentToNote(this.app, this.file, comment, this.fileType);
 
 		// ドラフトを削除
 		await this.plugin.deleteCommentDraft(this.file.path);

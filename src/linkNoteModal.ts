@@ -1,10 +1,11 @@
 // Timeline Note Launcher - Link Note Modal
-import { App, Modal, TFile } from 'obsidian';
-import { appendLinksToNote, extractOutgoingLinks } from './dataLayer';
-import { LinkedNote } from './types';
+import { App, Modal, Platform, TFile } from 'obsidian';
+import { appendLinksToNote, extractOutgoingLinks, getCompanionNotePath, getFileType } from './dataLayer';
+import { FileType, LinkedNote } from './types';
 
 export class LinkNoteModal extends Modal {
 	private file: TFile;
+	private fileType: FileType;
 	private existingLinks: LinkedNote[] = [];
 	private selectedNotes: TFile[] = [];
 	private searchInput: HTMLInputElement;
@@ -17,15 +18,25 @@ export class LinkNoteModal extends Modal {
 	constructor(app: App, file: TFile) {
 		super(app);
 		this.file = file;
+		this.fileType = getFileType(file.extension);
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.addClass('timeline-link-note-modal');
 
-		// 既存リンクを取得
-		const cache = this.app.metadataCache.getFileCache(this.file);
-		this.existingLinks = extractOutgoingLinks(this.app, this.file, cache);
+		// 既存リンクを取得（非マークダウンはコンパニオンノートから読む）
+		if (this.fileType !== 'markdown') {
+			const companionPath = getCompanionNotePath(this.file);
+			const companionFile = this.app.vault.getAbstractFileByPath(companionPath);
+			if (companionFile && companionFile instanceof TFile) {
+				const cache = this.app.metadataCache.getFileCache(companionFile);
+				this.existingLinks = extractOutgoingLinks(this.app, companionFile, cache);
+			}
+		} else {
+			const cache = this.app.metadataCache.getFileCache(this.file);
+			this.existingLinks = extractOutgoingLinks(this.app, this.file, cache);
+		}
 
 		// キャッシュを初期化
 		this.existingPaths = new Set(this.existingLinks.map(l => l.path));
@@ -36,6 +47,14 @@ export class LinkNoteModal extends Modal {
 			text: `リンクを追加: ${this.file.basename}`,
 			cls: 'timeline-link-note-modal-title',
 		});
+
+		// 非マークダウンの場合、コンパニオンノートへの保存を通知
+		if (this.fileType !== 'markdown') {
+			contentEl.createDiv({
+				cls: 'timeline-link-note-companion-info',
+				text: 'リンクはコンパニオンノートに保存されます。',
+			});
+		}
 
 		// 既存リンク表示
 		if (this.existingLinks.length > 0) {
@@ -115,6 +134,16 @@ export class LinkNoteModal extends Modal {
 				void this.confirmLinks();
 			}
 		});
+
+		// モバイル: キーボード表示時にモーダルを上に配置
+		if (Platform.isMobile) {
+			this.containerEl.addClass('timeline-modal-mobile-container');
+			this.searchInput.addEventListener('focus', () => {
+				setTimeout(() => {
+					this.searchInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+				}, 300);
+			});
+		}
 
 		// フォーカスを検索入力に
 		this.searchInput.focus();
@@ -250,7 +279,7 @@ export class LinkNoteModal extends Modal {
 			return;
 		}
 
-		await appendLinksToNote(this.app, this.file, this.selectedNotes);
+		await appendLinksToNote(this.app, this.file, this.selectedNotes, this.fileType);
 		this.close();
 	}
 }

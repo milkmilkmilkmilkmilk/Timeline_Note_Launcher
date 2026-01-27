@@ -35,6 +35,13 @@ export interface NoteReviewLog {
 	easeFactor: number;              // 易しさ係数（SM-2アルゴリズム用）
 }
 
+/** 評価取り消し用のスナップショット（セッション限り、永続化しない） */
+export interface RatingUndoSnapshot {
+	previousLog: NoteReviewLog | undefined;  // 評価前のログ（undefined=未レビュー）
+	wasNew: boolean;                          // 新規カードだったか
+	fileType: FileType;                       // ファイルタイプ（履歴デクリメント用）
+}
+
 /** 全ノートのレビューログ */
 export interface ReviewLogs {
 	[notePath: string]: NoteReviewLog;
@@ -172,6 +179,20 @@ export interface TimelineCard {
 	isDue: boolean;           // レビュー期限到来
 	// YAML連携
 	yamlDifficulty: number | null;
+	yamlPriority: number | null;
+}
+
+/** 選択フェーズ用の軽量カード（ファイルI/Oなし） */
+export interface CandidateCard {
+	path: string;
+	fileType: FileType;
+	extension: string;
+	lastReviewedAt: number | null;
+	reviewCount: number;
+	nextReviewAt: number | null;
+	isNew: boolean;
+	isDue: boolean;
+	pinned: boolean;
 	yamlPriority: number | null;
 }
 

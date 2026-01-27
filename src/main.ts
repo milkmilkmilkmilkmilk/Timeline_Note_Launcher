@@ -1,10 +1,11 @@
 // Timeline Note Launcher - Main Plugin
 import { Plugin } from 'obsidian';
-import { PluginData, DEFAULT_DATA, DifficultyRating, getTodayString, QuoteNoteDraft } from './types';
+import { PluginData, DEFAULT_DATA, DifficultyRating, TimelineCard, getTodayString, QuoteNoteDraft, RatingUndoSnapshot } from './types';
 import { TimelineView, TIMELINE_VIEW_TYPE } from './timelineView';
 import { TimelineSettingTab } from './settings';
 import {
 	enumerateTargetNotes,
+	createCandidateCard,
 	createTimelineCard,
 	updateReviewLog,
 	updateReviewLogWithSRS,
@@ -13,12 +14,17 @@ import {
 	cleanupOldHistory,
 	getFileType,
 	buildBacklinkIndex,
+	BacklinkIndex,
 } from './dataLayer';
-import { selectCards, SelectionResult } from './selectionEngine';
+import { selectCards } from './selectionEngine';
 
 export default class TimelineNoteLauncherPlugin extends Plugin {
 	data: PluginData;
 	private autoRefreshInterval: number | null = null;
+	private backlinkIndexCache: { index: BacklinkIndex; timestamp: number } | null = null;
+	private static readonly BACKLINK_CACHE_TTL = 10_000;
+	// 評価取り消し用スナップショット（セッション限り）
+	private ratingUndoMap: Map<string, RatingUndoSnapshot> = new Map();
 
 	async onload(): Promise<void> {
 		// データ読み込み
@@ -158,38 +164,56 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	}
 
 	/**
-	 * タイムラインカードを取得
+	 * タイムラインカードを取得（2フェーズパイプライン）
 	 */
-	async getTimelineCards(): Promise<SelectionResult> {
+	async getTimelineCards(): Promise<{ cards: TimelineCard[]; newCount: number; dueCount: number }> {
 		const targetFiles = enumerateTargetNotes(this.app, this.data.settings);
 
-		// バックリンクインデックスを一度に構築（O(n)スキャンを1回に削減）
-		const backlinkIndex = buildBacklinkIndex(this.app);
+		// Phase 1: 軽量候補生成（ファイルI/Oなし・同期）
+		const candidates = targetFiles.map(file =>
+			createCandidateCard(this.app, file, this.data.reviewLogs[file.path], this.data.settings)
+		);
 
-		// カードを生成（並列処理）
+		this.checkDailyStatsReset();
+
+		const result = selectCards(
+			candidates,
+			this.data.settings.selectionMode,
+			this.data.settings,
+			this.data.dailyStats.newReviewed,
+			this.data.dailyStats.reviewedCount
+		);
+
+		// Phase 2: 選択されたカードのみフルカード生成（ファイルI/Oあり）
+		const fileMap = new Map(targetFiles.map(f => [f.path, f]));
+		const backlinkIndex = this.getBacklinkIndex();
+
 		const cards = await Promise.all(
-			targetFiles.map(file =>
+			result.selectedPaths.map(path =>
 				createTimelineCard(
 					this.app,
-					file,
-					this.data.reviewLogs[file.path],
+					fileMap.get(path)!,
+					this.data.reviewLogs[path],
 					this.data.settings,
 					backlinkIndex
 				)
 			)
 		);
 
-		// 日次統計を確認
-		this.checkDailyStatsReset();
+		return { cards, newCount: result.newCount, dueCount: result.dueCount };
+	}
 
-		// 選択エンジンで並べ替え
-		return selectCards(
-			cards,
-			this.data.settings.selectionMode,
-			this.data.settings,
-			this.data.dailyStats.newReviewed,
-			this.data.dailyStats.reviewedCount
-		);
+	/**
+	 * バックリンクインデックスを取得（TTLキャッシュ付き）
+	 */
+	private getBacklinkIndex(): BacklinkIndex {
+		const now = Date.now();
+		if (this.backlinkIndexCache && now - this.backlinkIndexCache.timestamp < TimelineNoteLauncherPlugin.BACKLINK_CACHE_TTL) {
+			return this.backlinkIndexCache.index;
+		}
+		const index = buildBacklinkIndex(this.app);
+		this.backlinkIndexCache = { index, timestamp: now };
+		return index;
 	}
 
 	/**
@@ -226,16 +250,22 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	async rateCard(path: string, rating: DifficultyRating): Promise<void> {
 		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]?.reviewCount === 0;
 
+		// ファイルタイプを取得
+		const extension = path.split('.').pop() || 'md';
+		const fileType = getFileType(extension);
+
+		// 評価前のスナップショットを保存（Undo用）
+		const previousLog = this.data.reviewLogs[path]
+			? { ...this.data.reviewLogs[path] }
+			: undefined;
+		this.ratingUndoMap.set(path, { previousLog, wasNew, fileType });
+
 		this.data.reviewLogs = updateReviewLogWithSRS(
 			this.data.reviewLogs,
 			path,
 			rating,
 			this.data.settings
 		);
-
-		// ファイルタイプを取得
-		const extension = path.split('.').pop() || 'md';
-		const fileType = getFileType(extension);
 
 		// 日次統計を更新
 		this.checkDailyStatsReset();
@@ -255,9 +285,57 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	}
 
 	/**
+	 * 評価を取り消し（Undo）
+	 */
+	async undoRating(path: string): Promise<boolean> {
+		const snapshot = this.ratingUndoMap.get(path);
+		if (!snapshot) return false;
+
+		// スナップショットを消費（1回限り）
+		this.ratingUndoMap.delete(path);
+
+		// reviewLogs を復元
+		if (snapshot.previousLog) {
+			this.data.reviewLogs[path] = snapshot.previousLog;
+		} else {
+			delete this.data.reviewLogs[path];
+		}
+
+		// 日次統計をデクリメント
+		this.checkDailyStatsReset();
+		this.data.dailyStats.reviewedCount = Math.max(0, this.data.dailyStats.reviewedCount - 1);
+		if (snapshot.wasNew) {
+			this.data.dailyStats.newReviewed = Math.max(0, this.data.dailyStats.newReviewed - 1);
+		}
+
+		// レビュー履歴をデクリメント
+		const today = getTodayString();
+		const todayHistory = this.data.reviewHistory[today];
+		if (todayHistory) {
+			todayHistory.reviewedCount = Math.max(0, todayHistory.reviewedCount - 1);
+			if (snapshot.wasNew) {
+				todayHistory.newReviewed = Math.max(0, todayHistory.newReviewed - 1);
+			}
+			todayHistory.fileTypes[snapshot.fileType] = Math.max(0, todayHistory.fileTypes[snapshot.fileType] - 1);
+		}
+
+		await this.saveData(this.data);
+		return true;
+	}
+
+	/**
+	 * 指定パスにUndo可能な評価があるか
+	 */
+	hasUndoForCard(path: string): boolean {
+		return this.ratingUndoMap.has(path);
+	}
+
+	/**
 	 * すべてのTimelineViewを更新
 	 */
 	refreshAllViews(): void {
+		this.backlinkIndexCache = null;
+		this.ratingUndoMap.clear();
 		const leaves = this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE);
 		for (const leaf of leaves) {
 			const view = leaf.view;

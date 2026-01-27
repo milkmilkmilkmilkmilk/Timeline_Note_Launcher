@@ -43,6 +43,8 @@ export class TimelineView extends ItemView {
 	private lastCardPaths: string[] = [];
 	// ブックマークパスのキャッシュ
 	private cachedBookmarkedPaths: Set<string> | null = null;
+	// タグキャッシュ（refresh()時に更新）
+	private cachedAllTags: string[] = [];
 	// 無限スクロール用
 	private displayedCount: number = 0;
 	private isLoadingMore: boolean = false;
@@ -211,6 +213,7 @@ export class TimelineView extends ItemView {
 		// カードを取得
 		const result = await this.plugin.getTimelineCards();
 		this.cards = result.cards;
+		this.cachedAllTags = this.collectAllTags();
 		this.newCount = result.newCount;
 		this.dueCount = result.dueCount;
 
@@ -221,6 +224,31 @@ export class TimelineView extends ItemView {
 		if (this.listContainerEl) {
 			this.listContainerEl.scrollTop = this.scrollPosition;
 		}
+	}
+
+	/**
+	 * カードをチャンク単位で描画しDocumentFragmentに追加
+	 */
+	private async renderCardsToFragment(
+		cards: TimelineCard[],
+		isGridMode: boolean,
+		chunkSize: number = 5
+	): Promise<{ fragment: DocumentFragment; elements: HTMLElement[] }> {
+		const fragment = document.createDocumentFragment();
+		const elements: HTMLElement[] = [];
+		for (let i = 0; i < cards.length; i += chunkSize) {
+			const chunk = cards.slice(i, i + chunkSize);
+			const chunkEls = await Promise.all(
+				chunk.map(card =>
+					isGridMode ? this.createGridCardElement(card) : this.createCardElement(card)
+				)
+			);
+			for (const el of chunkEls) {
+				fragment.appendChild(el);
+				elements.push(el);
+			}
+		}
+		return { fragment, elements };
 	}
 
 	/**
@@ -258,6 +286,16 @@ export class TimelineView extends ItemView {
 			this.listContainerEl.removeClass(`timeline-image-${mode}`);
 		}
 		this.listContainerEl.addClass(`timeline-image-${imageSizeMode}`);
+
+		// プレビュー高さ制約（Fixed lines モードのみ）
+		if (this.plugin.data.settings.previewMode === 'lines') {
+			this.listContainerEl.addClass('timeline-preview-clamped');
+			const maxHeight = this.plugin.data.settings.previewLines * 40 + 16;
+			this.listContainerEl.style.setProperty('--preview-max-height', `${maxHeight}px`);
+		} else {
+			this.listContainerEl.removeClass('timeline-preview-clamped');
+			this.listContainerEl.style.removeProperty('--preview-max-height');
+		}
 
 		// ヘッダー
 		const header = this.listContainerEl.createDiv({ cls: 'timeline-header' });
@@ -332,16 +370,12 @@ export class TimelineView extends ItemView {
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
-		// 初期カードを描画
-		for (let i = 0; i < this.displayedCount; i++) {
-			const card = this.filteredCards[i];
-			if (!card) continue;
-			const cardEl = isGridMode
-				? await this.createGridCardElement(card)
-				: await this.createCardElement(card);
-			this.listEl.appendChild(cardEl);
-			this.cardElements.push(cardEl);
-		}
+		// 初期カードをチャンク描画
+		const { fragment, elements } = await this.renderCardsToFragment(
+			this.filteredCards.slice(0, this.displayedCount), isGridMode
+		);
+		this.cardElements = elements;
+		this.listEl.appendChild(fragment);
 
 		// 下部フッター
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
@@ -568,7 +602,7 @@ export class TimelineView extends ItemView {
 		}
 
 		// タグフィルタ
-		const allTags = this.collectAllTags();
+		const allTags = this.cachedAllTags;
 		if (allTags.length > 0) {
 			const tagSection = filterBar.createDiv({ cls: 'timeline-filter-tags' });
 			tagSection.createSpan({ cls: 'timeline-filter-tags-label', text: 'Tags:' });
@@ -718,15 +752,11 @@ export class TimelineView extends ItemView {
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
-		for (let i = 0; i < this.displayedCount; i++) {
-			const card = this.filteredCards[i];
-			if (!card) continue;
-			const cardEl = isGridMode
-				? await this.createGridCardElement(card)
-				: await this.createCardElement(card);
-			this.listEl.appendChild(cardEl);
-			this.cardElements.push(cardEl);
-		}
+		const { fragment: listFragment, elements: listElements } = await this.renderCardsToFragment(
+			this.filteredCards.slice(0, this.displayedCount), isGridMode
+		);
+		this.cardElements = listElements;
+		this.listEl.appendChild(listFragment);
 
 		this.focusedIndex = -1;
 
@@ -786,6 +816,54 @@ export class TimelineView extends ItemView {
 		} else {
 			headerEl.createSpan({ cls: 'timeline-card-header-time', text: 'New' });
 		}
+		// ヘッダー用アクションボタン（Twitterモードで表示）
+		{
+			const hasDraft = this.plugin.hasCommentDraft(card.path);
+			const headerCommentBtn = headerEl.createEl('button', {
+				cls: `timeline-card-header-action timeline-card-header-comment ${hasDraft ? 'has-draft' : ''}`,
+				attr: { 'aria-label': 'コメントを追加' },
+			});
+			headerCommentBtn.textContent = '💬';
+			headerCommentBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					const modal = new CommentModal(this.app, this.plugin, file);
+					modal.open();
+				}
+			});
+
+			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
+			const headerQuoteBtn = headerEl.createEl('button', {
+				cls: `timeline-card-header-action timeline-card-header-quote ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
+				attr: { 'aria-label': '引用ノート' },
+			});
+			headerQuoteBtn.textContent = '🔄';
+			headerQuoteBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					const modal = new QuoteNoteModal(this.app, this.plugin, file);
+					modal.open();
+				}
+			});
+		}
+
+		// リンクボタン - Twitter ヘッダー用
+		{
+			const headerLinkBtn = headerEl.createEl('button', {
+				cls: 'timeline-card-header-action timeline-card-header-link',
+				attr: { 'aria-label': 'ノートをリンク' },
+			});
+			headerLinkBtn.textContent = '\uD83D\uDD17';
+			headerLinkBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					new LinkNoteModal(this.app, file).open();
+				}
+			});
+		}
 		// ブックマークアイコン（ヘッダー用）
 		const isBookmarked = this.isFileBookmarked(card.path);
 		const headerBookmarkBtn = headerEl.createEl('button', {
@@ -832,8 +910,8 @@ export class TimelineView extends ItemView {
 			titleRow.createSpan({ cls: 'timeline-badge timeline-badge-due', text: 'DUE' });
 		}
 
-		// コメントボタン（マークダウンのみ）- Classic用
-		if (card.fileType === 'markdown') {
+		// コメントボタン - Classic用
+		{
 			const hasDraft = this.plugin.hasCommentDraft(card.path);
 			const commentBtn = titleRow.createEl('button', {
 				cls: `timeline-comment-btn ${hasDraft ? 'has-draft' : ''}`,
@@ -848,8 +926,10 @@ export class TimelineView extends ItemView {
 					modal.open();
 				}
 			});
+		}
 
-			// 引用ノートボタン（マークダウンのみ）- Classic用
+		// 引用ノートボタン - Classic用
+		{
 			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
 			const quoteNoteBtn = titleRow.createEl('button', {
 				cls: `timeline-quote-note-btn ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
@@ -864,8 +944,10 @@ export class TimelineView extends ItemView {
 					modal.open();
 				}
 			});
+		}
 
-			// リンクボタン（マークダウンのみ）- Classic用
+		// リンクボタン - Classic用
+		{
 			const linkBtn = titleRow.createEl('button', {
 				cls: 'timeline-link-note-btn',
 				attr: { 'aria-label': 'ノートをリンク' },
@@ -901,10 +983,12 @@ export class TimelineView extends ItemView {
 		// プレビュー
 		const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
 		if (card.fileType === 'markdown') {
+			// 脚注記法をエスケープ（プレビューでは参照先がないため）
+			const previewText = card.preview.replace(/\[\^/g, '\\[^');
 			// マークダウンをレンダリング
 			await MarkdownRenderer.render(
 				this.app,
-				card.preview,
+				previewText,
 				previewEl,
 				card.path,
 				this.renderComponent
@@ -1049,8 +1133,8 @@ export class TimelineView extends ItemView {
 		// Twitter風アクションバー
 		const actionsEl = contentEl.createDiv({ cls: 'timeline-card-actions' });
 
-		// コメントアクション（マークダウンのみ）
-		if (card.fileType === 'markdown') {
+		// コメントアクション
+		{
 			const hasDraft = this.plugin.hasCommentDraft(card.path);
 			const commentAction = actionsEl.createEl('button', {
 				cls: `timeline-action-btn timeline-action-comment ${hasDraft ? 'has-draft' : ''}`,
@@ -1065,8 +1149,10 @@ export class TimelineView extends ItemView {
 					modal.open();
 				}
 			});
+		}
 
-			// 引用アクション
+		// 引用アクション
+		{
 			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
 			const quoteAction = actionsEl.createEl('button', {
 				cls: `timeline-action-btn timeline-action-quote ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
@@ -1081,8 +1167,10 @@ export class TimelineView extends ItemView {
 					modal.open();
 				}
 			});
+		}
 
-			// リンクアクション（マークダウンのみ）
+		// リンクアクション
+		{
 			const linkAction = actionsEl.createEl('button', {
 				cls: 'timeline-action-btn timeline-action-link',
 			});
@@ -1326,9 +1414,37 @@ export class TimelineView extends ItemView {
 				e.stopPropagation();
 				void this.plugin.rateCard(card.path, btn.rating).then(() => {
 					container.closest('.timeline-card')?.addClass('timeline-card-reviewed');
+					this.replaceWithUndoButton(container, card);
 				});
 			});
 		}
+	}
+
+	/**
+	 * 難易度ボタンをUndoボタンに置換
+	 */
+	private replaceWithUndoButton(container: HTMLElement, card: TimelineCard): void {
+		container.empty();
+		container.addClass('timeline-difficulty-undo');
+
+		const undoBtn = container.createEl('button', {
+			cls: 'timeline-undo-btn',
+		});
+		undoBtn.createSpan({ text: '\u21A9 Undo' });
+
+		undoBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void this.plugin.undoRating(card.path).then((success) => {
+				if (success) {
+					// レビュー済みクラスを解除
+					container.closest('.timeline-card')?.removeClass('timeline-card-reviewed');
+					// Undoクラスを除去し、難易度ボタンを再描画
+					container.removeClass('timeline-difficulty-undo');
+					container.empty();
+					this.createDifficultyButtons(container, card);
+				}
+			});
+		});
 	}
 
 	/**
@@ -1531,16 +1647,13 @@ export class TimelineView extends ItemView {
 		const startIndex = this.displayedCount;
 		const endIndex = Math.min(startIndex + batchSize, this.filteredCards.length);
 
-		// 追加カードを描画
-		for (let i = startIndex; i < endIndex; i++) {
-			const card = this.filteredCards[i];
-			if (!card) continue;
-			const cardEl = isGridMode
-				? await this.createGridCardElement(card)
-				: await this.createCardElement(card);
-			this.listEl.appendChild(cardEl);
-			this.cardElements.push(cardEl);
-		}
+		// 追加カードをチャンク描画
+		const cardsToLoad = this.filteredCards.slice(startIndex, endIndex).filter((c): c is TimelineCard => !!c);
+		const { fragment: moreFragment, elements: moreElements } = await this.renderCardsToFragment(
+			cardsToLoad, isGridMode
+		);
+		this.cardElements.push(...moreElements);
+		this.listEl.appendChild(moreFragment);
 
 		this.displayedCount = endIndex;
 		this.isLoadingMore = false;
@@ -1751,6 +1864,12 @@ export class TimelineView extends ItemView {
 					this.openFocusedLinkNote();
 				}
 				break;
+			case 'u':
+				if (this.focusedIndex >= 0) {
+					e.preventDefault();
+					void this.undoFocusedCard();
+				}
+				break;
 			case 'r':
 				e.preventDefault();
 				void this.refresh();
@@ -1846,11 +1965,42 @@ export class TimelineView extends ItemView {
 		const cardEl = this.cardElements[this.focusedIndex];
 		if (cardEl) {
 			cardEl.addClass('timeline-card-reviewed');
+			// Undoボタンを表示
+			const buttonsEl = cardEl.querySelector('.timeline-difficulty-buttons') as HTMLElement;
+			if (buttonsEl) {
+				this.replaceWithUndoButton(buttonsEl, card);
+			}
 		}
 
 		// 次のカードにフォーカス
 		if (this.focusedIndex < this.cardElements.length - 1) {
 			this.setFocusedIndex(this.focusedIndex + 1);
+		}
+	}
+
+	/**
+	 * フォーカス中のカードの評価を取り消し
+	 */
+	private async undoFocusedCard(): Promise<void> {
+		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
+
+		const card = this.filteredCards[this.focusedIndex];
+		if (!card) return;
+		if (!this.plugin.hasUndoForCard(card.path)) return;
+
+		const success = await this.plugin.undoRating(card.path);
+		if (!success) return;
+
+		const cardEl = this.cardElements[this.focusedIndex];
+		if (cardEl) {
+			cardEl.removeClass('timeline-card-reviewed');
+			// 難易度ボタンを再描画
+			const buttonsEl = cardEl.querySelector('.timeline-difficulty-buttons') as HTMLElement;
+			if (buttonsEl) {
+				buttonsEl.removeClass('timeline-difficulty-undo');
+				buttonsEl.empty();
+				this.createDifficultyButtons(buttonsEl, card);
+			}
 		}
 	}
 
@@ -1883,7 +2033,7 @@ export class TimelineView extends ItemView {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
 
 		const card = this.filteredCards[this.focusedIndex];
-		if (!card || card.fileType !== 'markdown') return;
+		if (!card) return;
 
 		const file = this.app.vault.getAbstractFileByPath(card.path);
 		if (file && file instanceof TFile) {
@@ -1899,7 +2049,7 @@ export class TimelineView extends ItemView {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
 
 		const card = this.filteredCards[this.focusedIndex];
-		if (!card || card.fileType !== 'markdown') return;
+		if (!card) return;
 
 		const file = this.app.vault.getAbstractFileByPath(card.path);
 		if (file && file instanceof TFile) {
@@ -1915,7 +2065,7 @@ export class TimelineView extends ItemView {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
 
 		const card = this.filteredCards[this.focusedIndex];
-		if (!card || card.fileType !== 'markdown') return;
+		if (!card) return;
 
 		const file = this.app.vault.getAbstractFileByPath(card.path);
 		if (file && file instanceof TFile) {

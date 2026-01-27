@@ -5,6 +5,7 @@ import {
 	NoteReviewLog,
 	ReviewLogs,
 	TimelineCard,
+	CandidateCard,
 	LinkedNote,
 	DifficultyRating,
 	PreviewMode,
@@ -13,6 +14,32 @@ import {
 	DEFAULT_REVIEW_LOG,
 	getTodayString,
 } from './types';
+
+/**
+ * テキストとして読み取れるファイルタイプか判定
+ */
+export function isTextReadableFile(fileType: FileType): boolean {
+	return fileType === 'markdown' || fileType === 'text';
+}
+
+/**
+ * コンパニオンノートのパスを取得
+ */
+export function getCompanionNotePath(file: TFile): string {
+	return normalizePath(file.path + '.md');
+}
+
+/**
+ * コンパニオンノートを取得または作成
+ */
+export async function getOrCreateCompanionNote(app: App, file: TFile): Promise<TFile> {
+	const companionPath = getCompanionNotePath(file);
+	const existing = app.vault.getAbstractFileByPath(companionPath);
+	if (existing && existing instanceof TFile) return existing;
+	const link = app.fileManager.generateMarkdownLink(file, file.parent?.path ?? '');
+	const content = `---\ncompanion_of: "${file.name}"\n---\n\n元ファイル: ${link}\n`;
+	return await app.vault.create(companionPath, content);
+}
 
 /** テキスト拡張子 */
 const TEXT_EXTENSIONS = ['txt', 'text', 'log', 'ini', 'cfg', 'conf', 'json', 'xml', 'yaml', 'yml', 'toml', 'csv', 'tsv'];
@@ -367,63 +394,118 @@ function countContentLines(content: string, startIndex: number): number {
 }
 
 /**
- * ノートのプレビューテキストを取得
+ * ノートのプレビューテキストを取得（単一パス、中間配列なし）
  */
 export async function getPreviewText(
 	app: App,
 	file: TFile,
 	mode: PreviewMode,
-	lines: number
+	lines: number,
+	preloadedContent?: string
 ): Promise<string> {
-	const content = await app.vault.cachedRead(file);
+	const content = preloadedContent ?? await app.vault.cachedRead(file);
 
 	// frontmatterをスキップ
-	let bodyStartIndex = 0;
+	let bodyStart = 0;
 	if (content.startsWith('---')) {
 		const endIndex = content.indexOf('\n---', 3);
 		if (endIndex !== -1) {
 			const nextLineIndex = content.indexOf('\n', endIndex + 4);
-			bodyStartIndex = nextLineIndex !== -1 ? nextLineIndex + 1 : content.length;
+			bodyStart = nextLineIndex !== -1 ? nextLineIndex + 1 : content.length;
 		}
 	}
 
-	// 全行を保持（改行を維持するため）
-	const body = content.slice(bodyStartIndex);
-	const allLines = body.split('\n');
-
-	// 内容のある行数をカウント（単一パス、配列生成なし）
-	const totalContentLines = countContentLines(body, 0);
-
-	// モードに応じて表示行数を決定
-	let targetContentLines: number;
-	switch (mode) {
-		case 'full':
-			targetContentLines = totalContentLines;
-			break;
-		case 'half':
-			targetContentLines = Math.ceil(totalContentLines / 2);
-			break;
-		case 'lines':
-		default:
-			targetContentLines = lines;
-			break;
+	// fullモード: split不要で直接返却
+	if (mode === 'full') {
+		return content.slice(bodyStart);
 	}
 
-	// 内容行をカウントしながら、必要な範囲まで行を取得
+	// halfモード: 総行数を取得してから目標行まで走査
+	if (mode === 'half') {
+		const totalContentLines = countContentLines(content, bodyStart);
+		const targetLines = Math.ceil(totalContentLines / 2);
+		return sliceContentLines(content, bodyStart, targetLines);
+	}
+
+	// linesモード（デフォルト）: 先頭数行のみ走査して早期終了
+	return sliceContentLines(content, bodyStart, lines);
+}
+
+/**
+ * contentのstartIndexから、指定した内容行数分だけ切り出す（中間配列なし）
+ */
+function sliceContentLines(content: string, startIndex: number, targetLines: number): string {
 	let contentLineCount = 0;
-	let lastLineIndex = 0;
-	for (let i = 0; i < allLines.length; i++) {
-		if (allLines[i]!.trim() !== '') {
+	let pos = startIndex;
+	let endPos = startIndex;
+
+	while (pos < content.length) {
+		const nextNewline = content.indexOf('\n', pos);
+		const lineEnd = nextNewline === -1 ? content.length : nextNewline;
+
+		// この行が内容を持つかチェック（空白のみでないか）
+		let hasContent = false;
+		for (let i = pos; i < lineEnd; i++) {
+			const ch = content[i];
+			if (ch !== ' ' && ch !== '\t' && ch !== '\r') {
+				hasContent = true;
+				break;
+			}
+		}
+
+		if (hasContent) {
 			contentLineCount++;
 		}
-		if (contentLineCount >= targetContentLines) {
-			lastLineIndex = i;
+
+		// 現在の行の終端（改行を含む位置）を記録
+		endPos = nextNewline === -1 ? content.length : nextNewline;
+
+		if (contentLineCount >= targetLines) {
 			break;
 		}
-		lastLineIndex = i;
+
+		if (nextNewline === -1) break;
+		pos = nextNewline + 1;
+		continue;
 	}
 
-	return allLines.slice(0, lastLineIndex + 1).join('\n');
+	return content.slice(startIndex, endPos);
+}
+
+/**
+ * TFileから軽量なCandidateCardを生成（同期・ファイルI/Oなし）
+ * 選択フェーズで使用し、選択後にcreateTimelineCardでフルカード化する
+ */
+export function createCandidateCard(
+	app: App,
+	file: TFile,
+	reviewLog: NoteReviewLog | undefined,
+	settings: PluginSettings
+): CandidateCard {
+	const log = reviewLog ?? DEFAULT_REVIEW_LOG;
+	const now = Date.now();
+	const fileType = getFileType(file.extension);
+
+	let pinned = false;
+	let yamlPriority: number | null = null;
+	if (fileType === 'markdown') {
+		const cache = app.metadataCache.getFileCache(file);
+		pinned = isPinned(cache);
+		yamlPriority = getYamlNumber(cache, settings.yamlPriorityKey);
+	}
+
+	return {
+		path: file.path,
+		fileType,
+		extension: file.extension,
+		lastReviewedAt: log.lastReviewedAt,
+		reviewCount: log.reviewCount,
+		nextReviewAt: log.nextReviewAt,
+		isNew: log.reviewCount === 0,
+		isDue: log.nextReviewAt !== null && log.nextReviewAt <= now,
+		pinned,
+		yamlPriority,
+	};
 }
 
 /**
@@ -450,7 +532,7 @@ export async function createTimelineCard(
 	if (fileType === 'markdown') {
 		const cache = app.metadataCache.getFileCache(file);
 		const content = await app.vault.cachedRead(file);
-		const preview = await getPreviewText(app, file, settings.previewMode, settings.previewLines);
+		const preview = await getPreviewText(app, file, settings.previewMode, settings.previewLines, content);
 
 		// 最初の画像を抽出
 		const firstImagePath = extractFirstImage(app, file, content);
@@ -707,11 +789,13 @@ export function cleanupOldLogs(
 
 /**
  * ノートの末尾にコメントをCallout形式で追加
+ * マークダウンファイルは直接追記、それ以外はコンパニオンノートに追記
  */
 export async function appendCommentToNote(
 	app: App,
 	file: TFile,
-	comment: string
+	comment: string,
+	fileType?: FileType
 ): Promise<void> {
 	const now = new Date();
 	const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -722,7 +806,13 @@ export async function appendCommentToNote(
 	// Callout形式で追記
 	const calloutContent = `\n\n> [!comment] ${timestamp}\n${commentLines}`;
 
-	await app.vault.append(file, calloutContent);
+	// マークダウンファイルは直接追記、それ以外はコンパニオンノートに追記
+	if (fileType && fileType !== 'markdown') {
+		const companionNote = await getOrCreateCompanionNote(app, file);
+		await app.vault.append(companionNote, calloutContent);
+	} else {
+		await app.vault.append(file, calloutContent);
+	}
 }
 
 /**
@@ -731,13 +821,21 @@ export async function appendCommentToNote(
 export async function appendLinksToNote(
 	app: App,
 	sourceFile: TFile,
-	targetFiles: TFile[]
+	targetFiles: TFile[],
+	fileType?: FileType
 ): Promise<void> {
 	if (targetFiles.length === 0) return;
+	// 書き込み先を決定（マークダウン以外はコンパニオンノートへ）
+	let writeTarget: TFile;
+	if (fileType && fileType !== 'markdown') {
+		writeTarget = await getOrCreateCompanionNote(app, sourceFile);
+	} else {
+		writeTarget = sourceFile;
+	}
 	const linkLines = targetFiles
-		.map(f => app.fileManager.generateMarkdownLink(f, sourceFile.path))
+		.map(f => app.fileManager.generateMarkdownLink(f, writeTarget.path))
 		.join('\n');
-	await app.vault.append(sourceFile, `\n\n${linkLines}`);
+	await app.vault.append(writeTarget, `\n\n${linkLines}`);
 }
 
 /**
