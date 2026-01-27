@@ -59,7 +59,9 @@ export class QuoteNoteModal extends Modal {
 			text: '追加',
 			cls: 'timeline-quote-note-add-btn',
 		});
-		addBtn.addEventListener('click', () => {
+		// mousedownを使用して、クリック時に選択が解除される前に処理する
+		addBtn.addEventListener('mousedown', (e) => {
+			e.preventDefault(); // 選択解除を防ぐ
 			this.addCurrentSelection();
 		});
 
@@ -126,18 +128,18 @@ export class QuoteNoteModal extends Modal {
 			text: '作成して開く',
 			cls: 'timeline-quote-note-btn-create',
 		});
-		createBtn.addEventListener('click', async () => {
-			await this.createNote();
+		createBtn.addEventListener('click', () => {
+			void this.createNote();
 		});
 
 		// テキスト選択イベント
 		document.addEventListener('selectionchange', this.handleSelectionChange);
 
 		// Enter + Ctrl/Cmd で作成
-		this.commentTextArea.addEventListener('keydown', async (e) => {
+		this.commentTextArea.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
 				e.preventDefault();
-				await this.createNote();
+				void this.createNote();
 			}
 		});
 
@@ -145,12 +147,12 @@ export class QuoteNoteModal extends Modal {
 		this.commentTextArea.focus();
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): void {
 		// イベントリスナーを削除
 		document.removeEventListener('selectionchange', this.handleSelectionChange);
 
 		// モーダルを閉じるときにドラフトを保存
-		await this.plugin.saveQuoteNoteDraft(this.file.path, {
+		void this.plugin.saveQuoteNoteDraft(this.file.path, {
 			selectedTexts: this.selectedTexts,
 			title: this.titleInput?.value ?? '',
 			comment: this.commentTextArea?.value ?? '',

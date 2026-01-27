@@ -71,4 +71,4 @@ Persisted in `data.json`:
 - `Platform.isMobile` for mobile-specific behavior
 - TypeScript strict mode enabled
 - When adding new settings: update `PluginSettings` interface, `DEFAULT_SETTINGS`, and settings UI in `settings.ts`
-- PDF files are displayed using `<embed>` elements with `pointer-events: none` to allow card clicks
+- PDF files are displayed using interactive `<embed>` elements with an "Open" button overlay for navigation

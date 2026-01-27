@@ -12,6 +12,9 @@ export type ViewMode = 'list' | 'grid';
 /** カラーテーマ */
 export type ColorTheme = 'default' | 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'red' | 'cyan' | 'yellow';
 
+/** UIテーマ */
+export type UITheme = 'classic' | 'twitter';
+
 /** 難易度評価 */
 export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
 
@@ -19,7 +22,7 @@ export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
 export type ImageSizeMode = 'small' | 'medium' | 'large' | 'full';
 
 /** ファイルタイプ */
-export type FileType = 'markdown' | 'image' | 'pdf' | 'audio' | 'video' | 'other';
+export type FileType = 'markdown' | 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'office' | 'ipynb' | 'other';
 
 /** ノートごとのレビューログ（data.json に保存） */
 export interface NoteReviewLog {
@@ -54,6 +57,7 @@ export interface PluginSettings {
 	previewMode: PreviewMode;  // 'lines' | 'half' | 'full'
 	previewLines: number;      // previewMode が 'lines' の時のみ使用
 	colorTheme: ColorTheme;    // カラーテーマ
+	uiTheme: UITheme;          // UIテーマ
 	showMeta: boolean;
 	enableSplitView: boolean;  // Desktop only
 	showDifficultyButtons: boolean;  // 難易度ボタンを表示
@@ -64,6 +68,8 @@ export interface PluginSettings {
 	maxCards: number;            // タイムラインに表示する最大カード数
 	autoRefreshMinutes: number;  // 0 = 手動のみ
 	logRetentionDays: number;
+	enableInfiniteScroll: boolean;     // 無限スクロールを有効化
+	infiniteScrollBatchSize: number;   // 一度にロードするカード数
 
 	// SRS設定
 	newCardsPerDay: number;          // 1日あたりの新規カード数
@@ -77,6 +83,10 @@ export interface PluginSettings {
 
 	// 引用ノート設定
 	quoteNoteTemplate: string;    // 引用ノート用テンプレート
+
+	// クイックノート設定
+	quickNoteFolder: string;      // クイックノートの保存先フォルダ
+	quickNoteTemplate: string;    // クイックノート用テンプレート
 }
 
 /** コメントドラフト */
@@ -103,10 +113,13 @@ export interface DailyReviewHistory {
 		reviewedCount: number;
 		fileTypes: {
 			markdown: number;
+			text: number;
 			image: number;
 			pdf: number;
 			audio: number;
 			video: number;
+			office: number;
+			ipynb: number;
 			other: number;
 		};
 	};
@@ -172,6 +185,20 @@ export const DEFAULT_REVIEW_LOG: NoteReviewLog = {
 	easeFactor: 2.5,
 };
 
+/** デフォルトクイックノートテンプレート */
+export const DEFAULT_QUICK_NOTE_TEMPLATE = `---
+uid: {{uid}}
+title: {{title}}
+aliases:
+tags:
+publish: false
+created: {{date}}
+updated: {{date}}
+---
+
+{{content}}
+`;
+
 /** デフォルト引用ノートテンプレート */
 export const DEFAULT_QUOTE_NOTE_TEMPLATE = `---
 uid: {{uid}}
@@ -185,7 +212,7 @@ reference: [[{{originalNote}}]]
 ---
 
 > [!quote] [[{{originalNote}}]]より
-> {{quotedText}}
+{{quotedText}}
 
 {{comment}}
 `;
@@ -202,6 +229,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	previewMode: 'half',
 	previewLines: 3,
 	colorTheme: 'default',
+	uiTheme: 'classic',
 	showMeta: true,
 	enableSplitView: false,
 	showDifficultyButtons: true,
@@ -210,6 +238,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	maxCards: 50,
 	autoRefreshMinutes: 0,
 	logRetentionDays: 90,
+	enableInfiniteScroll: false,
+	infiniteScrollBatchSize: 20,
 	// SRS設定
 	newCardsPerDay: 20,
 	reviewCardsPerDay: 100,
@@ -220,6 +250,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	yamlPriorityKey: '',
 	// 引用ノート
 	quoteNoteTemplate: DEFAULT_QUOTE_NOTE_TEMPLATE,
+	// クイックノート
+	quickNoteFolder: '',
+	quickNoteTemplate: DEFAULT_QUICK_NOTE_TEMPLATE,
 };
 
 /** デフォルトデータ */

@@ -31,22 +31,22 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		);
 
 		// リボンアイコン
-		this.addRibbonIcon('rocket', 'Open Timeline', () => {
-			this.activateView();
+		this.addRibbonIcon('rocket', 'Open timeline', () => {
+			void this.activateView();
 		});
 
 		// コマンド登録
 		this.addCommand({
 			id: 'open-timeline',
-			name: 'Open Timeline',
+			name: 'Open timeline',
 			callback: () => {
-				this.activateView();
+				void this.activateView();
 			},
 		});
 
 		this.addCommand({
 			id: 'refresh-timeline',
-			name: 'Refresh Timeline',
+			name: 'Refresh timeline',
 			callback: () => {
 				this.refreshAllViews();
 			},
@@ -72,7 +72,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			// 日次統計のリセット確認
 			this.checkDailyStatsReset();
 
-			this.saveData(this.data);
+			void this.saveData(this.data);
 		});
 	}
 
@@ -87,7 +87,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * プラグインデータを読み込み
 	 */
 	private async loadPluginData(): Promise<void> {
-		const loaded = await this.loadData();
+		const loaded = await this.loadData() as Partial<PluginData> | null;
 		this.data = Object.assign({}, DEFAULT_DATA, loaded);
 
 		// 設定のマージ（新しいキーがあれば追加）
@@ -153,7 +153,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		}
 
 		if (leaf) {
-			workspace.revealLeaf(leaf);
+			void workspace.revealLeaf(leaf);
 		}
 	}
 
@@ -196,7 +196,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * ノートを既読としてマーク（通常レビュー）
 	 */
 	async markAsReviewed(path: string): Promise<void> {
-		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]!.reviewCount === 0;
+		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]?.reviewCount === 0;
 		this.data.reviewLogs = updateReviewLog(this.data.reviewLogs, path);
 
 		// ファイルタイプを取得
@@ -224,7 +224,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * カードを評価（SRSレビュー）
 	 */
 	async rateCard(path: string, rating: DifficultyRating): Promise<void> {
-		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]!.reviewCount === 0;
+		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]?.reviewCount === 0;
 
 		this.data.reviewLogs = updateReviewLogWithSRS(
 			this.data.reviewLogs,
@@ -262,7 +262,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		for (const leaf of leaves) {
 			const view = leaf.view;
 			if (view instanceof TimelineView) {
-				view.refresh();
+				void view.refresh();
 			}
 		}
 	}

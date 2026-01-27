@@ -774,6 +774,16 @@
 	color: var(--text-faint);
 }
 
+/* Twitter用ヘッダー（デフォルトは非表示） */
+.timeline-card-header {
+	display: none;
+}
+
+/* Twitter用アクションバー（デフォルトは非表示） */
+.timeline-card-actions {
+	display: none;
+}
+
 .timeline-card-interval {
 	color: var(--text-accent);
 }
@@ -1665,6 +1675,10 @@
 	background: transparent;
 }
 
+.timeline-badge-text {
+	color: #64748b;
+}
+
 .timeline-badge-image {
 	color: #22c55e;
 }
@@ -1681,11 +1695,23 @@
 	color: #3b82f6;
 }
 
+.timeline-badge-office {
+	color: #f97316;
+}
+
+.timeline-badge-ipynb {
+	color: #e76f00;
+}
+
 .timeline-badge-other {
 	color: var(--text-muted);
 }
 
 /* ファイルタイプ別カードスタイル */
+.timeline-card-type-text {
+	border-left-color: #64748b;
+}
+
 .timeline-card-type-image {
 	border-left-color: #22c55e;
 }
@@ -1700,6 +1726,14 @@
 
 .timeline-card-type-video {
 	border-left-color: #3b82f6;
+}
+
+.timeline-card-type-office {
+	border-left-color: #f97316;
+}
+
+.timeline-card-type-ipynb {
+	border-left-color: #e76f00;
 }
 
 .timeline-card-type-other {
@@ -1801,32 +1835,44 @@
 	position: relative;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 6px;
-	overflow: hidden;
+	overflow: visible;
 	background: var(--background-primary);
 }
 
 .timeline-card-pdf-embed embed {
 	width: 100%;
-	height: 300px;
 	display: block;
 	border: none;
-	pointer-events: none;
 }
 
-/* メディアサイズモードに応じたPDF高さ */
-.timeline-image-small .timeline-card-pdf-embed embed {
-	height: 100px;
+/* PDF オープンボタン */
+.timeline-pdf-open-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 6px 12px;
+	background: rgba(0, 0, 0, 0.7);
+	color: white;
+	border: none;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 500;
+	opacity: 0;
+	transition: opacity 0.15s ease, background 0.15s ease;
+	z-index: 10;
 }
 
-.timeline-image-medium .timeline-card-pdf-embed embed {
-	height: 200px;
+.timeline-card-pdf-embed:hover .timeline-pdf-open-btn {
+	opacity: 1;
 }
 
-.timeline-image-large .timeline-card-pdf-embed embed {
-	height: 400px;
+.timeline-pdf-open-btn:hover {
+	background: var(--interactive-accent);
 }
 
-.timeline-image-full .timeline-card-pdf-embed embed {
+/* PDFは常にフルサイズで表示 */
+.timeline-card-pdf-embed embed {
 	height: 600px;
 }
 
@@ -1834,6 +1880,7 @@
 .timeline-grid-card-pdf-embed {
 	position: relative;
 	background: var(--background-primary);
+	overflow: visible;
 }
 
 .timeline-grid-card-pdf-embed embed {
@@ -1842,32 +1889,679 @@
 	min-height: 150px;
 	display: block;
 	border: none;
-	pointer-events: none;
 }
 
-/* グリッド表示のPDF - サイズモード対応 */
-.timeline-image-small .timeline-grid-card-pdf-embed {
+.timeline-grid-card-pdf-embed .timeline-pdf-open-btn {
+	top: 8px;
+	right: 8px;
+}
+
+.timeline-grid-card-pdf-embed:hover .timeline-pdf-open-btn {
+	opacity: 1;
+}
+
+/* グリッド表示のPDF - 常にフルサイズ */
+.timeline-grid-card-pdf-embed {
 	aspect-ratio: 3/4;
+	min-height: 400px;
 }
 
-.timeline-image-medium .timeline-grid-card-pdf-embed {
-	aspect-ratio: 3/4;
-}
-
-.timeline-image-large .timeline-grid-card-pdf-embed {
-	aspect-ratio: 3/4;
-}
-
-.timeline-image-full .timeline-grid-card-pdf-embed {
-	aspect-ratio: 3/4;
-	min-height: 250px;
-}
-
-/* モバイル向けPDF調整 */
+/* モバイル向けPDF調整 - フルサイズ維持 */
 .timeline-mobile .timeline-card-pdf-embed embed {
-	height: 200px;
+	height: 500px;
 }
 
 .timeline-mobile .timeline-grid-card-pdf-embed {
-	aspect-ratio: 1;
+	aspect-ratio: 3/4;
+	min-height: 350px;
+}
+
+/* ===== UIテーマ: Classic（デフォルト） ===== */
+
+/* Classicモードでは新しいTwitter用要素を非表示 */
+.timeline-ui-classic .timeline-card-header,
+.timeline-ui-classic .timeline-card-actions {
+	display: none;
+}
+
+/* ===== UIテーマ: Twitter風 ===== */
+
+/* Twitter風ではClassic用の要素を非表示 */
+.timeline-container.timeline-ui-twitter .timeline-card .timeline-card-meta,
+.timeline-container.timeline-ui-twitter .timeline-card .timeline-comment-btn,
+.timeline-container.timeline-ui-twitter .timeline-card .timeline-quote-note-btn,
+.timeline-container.timeline-ui-twitter .timeline-card .timeline-bookmark-btn {
+	display: none;
+}
+
+/* Twitter風カード基本スタイル */
+.timeline-ui-twitter .timeline-card {
+	border-radius: 0;
+	border-left: none;
+	border-bottom: 1px solid var(--background-modifier-border);
+	padding: 16px 20px;
+	margin-bottom: 0;
+	background: var(--background-primary);
+	transition: background 0.15s ease;
+}
+
+.timeline-ui-twitter .timeline-card:hover {
+	background: var(--background-secondary);
+}
+
+.timeline-ui-twitter .timeline-list {
+	gap: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 16px;
+	overflow: hidden;
+	background: var(--background-primary);
+}
+
+.timeline-ui-twitter .timeline-list .timeline-card:first-child {
+	border-top-left-radius: 16px;
+	border-top-right-radius: 16px;
+}
+
+.timeline-ui-twitter .timeline-list .timeline-card:last-child {
+	border-bottom: none;
+	border-bottom-left-radius: 16px;
+	border-bottom-right-radius: 16px;
+}
+
+/* Twitter風ヘッダー（フォルダ + タイムスタンプ） */
+.timeline-ui-twitter .timeline-card-header {
+	display: flex;
+	align-items: center;
+	gap: 0;
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-bottom: 4px;
+}
+
+.timeline-ui-twitter .timeline-card-header-folder {
+	color: var(--text-muted);
+}
+
+.timeline-ui-twitter .timeline-card-header-separator {
+	color: var(--text-faint);
+}
+
+.timeline-ui-twitter .timeline-card-header-time {
+	color: var(--text-faint);
+}
+
+.timeline-ui-twitter .timeline-card-header-bookmark {
+	margin-left: auto;
+	padding: 4px 8px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	font-size: 16px;
+	color: var(--text-faint);
+	opacity: 0.6;
+	transition: all 0.15s ease;
+	line-height: 1;
+}
+
+.timeline-ui-twitter .timeline-card-header-bookmark:hover {
+	opacity: 1;
+	color: var(--text-warning);
+	transform: scale(1.1);
+}
+
+.timeline-ui-twitter .timeline-card-header-bookmark.is-bookmarked {
+	opacity: 1;
+	color: var(--text-warning);
+}
+
+/* Twitter風タイトル */
+.timeline-ui-twitter .timeline-card-title-row {
+	margin-bottom: 8px;
+}
+
+.timeline-ui-twitter .timeline-card-title {
+	font-size: 16px;
+	font-weight: 700;
+	color: var(--text-normal);
+}
+
+/* Twitter風バッジ */
+.timeline-ui-twitter .timeline-badge-new,
+.timeline-ui-twitter .timeline-badge-due {
+	border-radius: 9999px;
+	font-size: 10px;
+	padding: 2px 10px;
+	font-weight: 600;
+}
+
+/* Twitter風プレビュー */
+.timeline-ui-twitter .timeline-card-preview {
+	font-size: 15px;
+	line-height: 1.5;
+	color: var(--text-normal);
+	margin-bottom: 12px;
+}
+
+/* Twitter風サムネイル */
+.timeline-ui-twitter .timeline-card-thumbnail {
+	border-radius: 16px;
+	margin-bottom: 12px;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.timeline-ui-twitter .timeline-card-thumbnail img {
+	border-radius: 0;
+}
+
+/* Twitter風リンクセクション非表示 */
+.timeline-ui-twitter .timeline-card-links {
+	display: none;
+}
+
+/* Twitter風アクションバー */
+.timeline-ui-twitter .timeline-card-actions {
+	display: flex;
+	align-items: center;
+	gap: 24px;
+	padding-top: 12px;
+	margin-top: 4px;
+}
+
+.timeline-ui-twitter .timeline-action-btn {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: var(--text-muted);
+	font-size: 14px;
+	border-radius: 9999px;
+	transition: all 0.15s ease;
+}
+
+.timeline-ui-twitter .timeline-action-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-accent);
+}
+
+.timeline-ui-twitter .timeline-action-btn.has-draft {
+	color: var(--text-warning);
+}
+
+.timeline-ui-twitter .timeline-action-label {
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.timeline-ui-twitter .timeline-action-reviews {
+	cursor: default;
+}
+
+.timeline-ui-twitter .timeline-action-reviews:hover {
+	background: transparent;
+	color: var(--text-muted);
+}
+
+.timeline-ui-twitter .timeline-action-tags {
+	display: flex;
+	gap: 6px;
+	margin-left: auto;
+}
+
+.timeline-ui-twitter .timeline-action-tag {
+	font-size: 12px;
+	padding: 4px 10px;
+	background: var(--background-secondary);
+	border-radius: 9999px;
+	color: var(--text-accent);
+}
+
+.timeline-ui-twitter .timeline-action-tag-more {
+	font-size: 12px;
+	color: var(--text-faint);
+	padding: 4px 6px;
+}
+
+/* Twitter風難易度ボタン */
+.timeline-ui-twitter .timeline-difficulty-buttons {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 12px;
+	margin-top: 8px;
+	gap: 12px;
+	justify-content: flex-start;
+}
+
+.timeline-ui-twitter .timeline-difficulty-btn {
+	border-radius: 9999px;
+	padding: 8px 16px;
+	flex: 0 0 auto;
+}
+
+.timeline-ui-twitter .timeline-btn-label {
+	font-size: 12px;
+}
+
+.timeline-ui-twitter .timeline-btn-interval {
+	font-size: 10px;
+}
+
+/* Twitter風グリッドカード */
+.timeline-ui-twitter .timeline-grid-card {
+	border-radius: 16px;
+	border: 1px solid var(--background-modifier-border);
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.timeline-ui-twitter .timeline-grid-card:hover {
+	transform: translateY(-4px);
+	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+}
+
+.timeline-ui-twitter .timeline-grid-card-thumbnail {
+	border-radius: 16px 16px 0 0;
+}
+
+.timeline-ui-twitter .timeline-grid-card-info {
+	padding: 14px 16px;
+}
+
+.timeline-ui-twitter .timeline-grid-card-title {
+	font-size: 15px;
+	font-weight: 600;
+}
+
+/* Twitter風フィルタバー */
+.timeline-ui-twitter .timeline-filter-bar {
+	border-radius: 16px;
+	padding: 14px 18px;
+	margin-bottom: 16px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.timeline-ui-twitter .timeline-search-input {
+	border-radius: 9999px;
+	padding: 10px 16px;
+}
+
+.timeline-ui-twitter .timeline-filter-type-btn {
+	border-radius: 9999px;
+	padding: 8px 12px;
+}
+
+.timeline-ui-twitter .timeline-filter-tag-chip {
+	border-radius: 9999px;
+	padding: 6px 14px;
+}
+
+/* Twitter風ページヘッダー */
+.timeline-ui-twitter .timeline-header {
+	padding: 16px 20px;
+	margin-bottom: 16px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.timeline-ui-twitter .timeline-refresh-btn {
+	border-radius: 9999px;
+	padding: 8px 16px;
+}
+
+.timeline-ui-twitter .timeline-view-mode-btn,
+.timeline-ui-twitter .timeline-view-toggle-btn {
+	border-radius: 9999px;
+}
+
+/* Twitter風フッター */
+.timeline-ui-twitter .timeline-footer {
+	padding: 32px 16px;
+}
+
+.timeline-ui-twitter .timeline-footer .timeline-refresh-btn {
+	border-radius: 9999px;
+	padding: 16px 32px;
+	font-size: 18px;
+}
+
+/* Twitter風 - モバイル調整 */
+.timeline-ui-twitter.timeline-mobile .timeline-card {
+	padding: 14px 16px;
+}
+
+.timeline-ui-twitter.timeline-mobile .timeline-card-title {
+	font-size: 15px;
+}
+
+.timeline-ui-twitter.timeline-mobile .timeline-card-actions {
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+.timeline-ui-twitter.timeline-mobile .timeline-action-btn {
+	padding: 10px 14px;
+}
+
+.timeline-ui-twitter.timeline-mobile .timeline-difficulty-btn {
+	padding: 12px 18px;
+}
+
+.timeline-ui-twitter.timeline-mobile .timeline-btn-label {
+	font-size: 13px;
+}
+
+/* Twitter風 - ピン留め・NEW・DUEカードの装飾 */
+.timeline-ui-twitter .timeline-card-pinned {
+	background: linear-gradient(135deg, rgba(var(--color-accent-rgb), 0.05) 0%, var(--background-primary) 100%);
+}
+
+.timeline-ui-twitter .timeline-card-new {
+	background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, var(--background-primary) 100%);
+}
+
+.timeline-ui-twitter .timeline-card-due {
+	background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, var(--background-primary) 100%);
+}
+
+/* Twitter風 - カラーテーマとの組み合わせ */
+.timeline-ui-twitter.timeline-theme-blue .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-blue .timeline-action-tag {
+	color: #3b82f6;
+}
+
+.timeline-ui-twitter.timeline-theme-cyan .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-cyan .timeline-action-tag {
+	color: #06b6d4;
+}
+
+.timeline-ui-twitter.timeline-theme-green .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-green .timeline-action-tag {
+	color: #22c55e;
+}
+
+.timeline-ui-twitter.timeline-theme-yellow .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-yellow .timeline-action-tag {
+	color: #ca8a04;
+}
+
+.timeline-ui-twitter.timeline-theme-orange .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-orange .timeline-action-tag {
+	color: #f97316;
+}
+
+.timeline-ui-twitter.timeline-theme-red .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-red .timeline-action-tag {
+	color: #ef4444;
+}
+
+.timeline-ui-twitter.timeline-theme-pink .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-pink .timeline-action-tag {
+	color: #ec4899;
+}
+
+.timeline-ui-twitter.timeline-theme-purple .timeline-card-title,
+.timeline-ui-twitter.timeline-theme-purple .timeline-action-tag {
+	color: #a855f7;
+}
+
+/* ===== 無限スクロール ローディングインジケーター ===== */
+
+.timeline-loading-indicator {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	padding: 20px;
+	color: var(--text-muted);
+}
+
+.timeline-loading-spinner {
+	width: 20px;
+	height: 20px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: timeline-spin 0.8s linear infinite;
+}
+
+@keyframes timeline-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.timeline-loading-text {
+	font-size: 13px;
+	color: var(--text-muted);
+}
+
+/* Twitter風テーマでのローディングインジケーター */
+.timeline-ui-twitter .timeline-loading-indicator {
+	padding: 32px 20px;
+}
+
+.timeline-ui-twitter .timeline-loading-spinner {
+	width: 24px;
+	height: 24px;
+	border-width: 3px;
+}
+
+.timeline-ui-twitter .timeline-loading-text {
+	font-size: 14px;
+}
+
+/* ===== クイックノート作成ボックス（Compose Box） ===== */
+
+.timeline-compose-box {
+	display: flex;
+	gap: 12px;
+	padding: 16px;
+	background: var(--background-secondary);
+	border-radius: 12px;
+	margin-bottom: 12px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+.timeline-compose-avatar {
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 24px;
+	flex-shrink: 0;
+}
+
+.timeline-compose-input-area {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.timeline-compose-textarea {
+	width: 100%;
+	min-height: 48px;
+	max-height: 200px;
+	padding: 12px;
+	border: none;
+	background: transparent;
+	color: var(--text-normal);
+	font-size: 18px;
+	line-height: 1.4;
+	resize: none;
+	font-family: var(--font-text);
+	outline: none;
+}
+
+.timeline-compose-textarea::placeholder {
+	color: var(--text-faint);
+	font-size: 18px;
+}
+
+.timeline-compose-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 16px;
+	padding-top: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.timeline-compose-char-counter {
+	font-size: 13px;
+	color: var(--text-faint);
+}
+
+.timeline-compose-post-btn {
+	padding: 10px 24px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	border-radius: 9999px;
+	font-size: 15px;
+	font-weight: 700;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.timeline-compose-post-btn:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+
+.timeline-compose-post-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* モバイル向け調整 */
+.timeline-mobile .timeline-compose-box {
+	padding: 12px;
+	gap: 10px;
+}
+
+.timeline-mobile .timeline-compose-avatar {
+	width: 40px;
+	height: 40px;
+	font-size: 20px;
+}
+
+.timeline-mobile .timeline-compose-textarea {
+	font-size: 16px;
+	padding: 8px;
+}
+
+.timeline-mobile .timeline-compose-textarea::placeholder {
+	font-size: 16px;
+}
+
+.timeline-mobile .timeline-compose-post-btn {
+	padding: 8px 20px;
+	font-size: 14px;
+}
+
+/* Twitter風テーマでのCompose Box */
+.timeline-ui-twitter .timeline-compose-box {
+	border-radius: 0;
+	margin-bottom: 0;
+	border-left: none;
+	border-right: none;
+	border-top: none;
+	background: var(--background-primary);
+	padding: 16px 20px;
+}
+
+.timeline-ui-twitter .timeline-compose-textarea {
+	font-size: 20px;
+}
+
+.timeline-ui-twitter .timeline-compose-textarea::placeholder {
+	font-size: 20px;
+}
+
+.timeline-ui-twitter .timeline-compose-actions {
+	border-top: none;
+	padding-top: 8px;
+}
+
+/* カラーテーマとの組み合わせ */
+.timeline-theme-blue .timeline-compose-avatar,
+.timeline-theme-blue .timeline-compose-post-btn {
+	background: #3b82f6;
+}
+
+.timeline-theme-cyan .timeline-compose-avatar,
+.timeline-theme-cyan .timeline-compose-post-btn {
+	background: #06b6d4;
+}
+
+.timeline-theme-green .timeline-compose-avatar,
+.timeline-theme-green .timeline-compose-post-btn {
+	background: #22c55e;
+}
+
+.timeline-theme-yellow .timeline-compose-avatar,
+.timeline-theme-yellow .timeline-compose-post-btn {
+	background: #eab308;
+}
+
+.timeline-theme-orange .timeline-compose-avatar,
+.timeline-theme-orange .timeline-compose-post-btn {
+	background: #f97316;
+}
+
+.timeline-theme-red .timeline-compose-avatar,
+.timeline-theme-red .timeline-compose-post-btn {
+	background: #ef4444;
+}
+
+.timeline-theme-pink .timeline-compose-avatar,
+.timeline-theme-pink .timeline-compose-post-btn {
+	background: #ec4899;
+}
+
+.timeline-theme-purple .timeline-compose-avatar,
+.timeline-theme-purple .timeline-compose-post-btn {
+	background: #a855f7;
+}
+
+/* ===== プルトゥリフレッシュ ===== */
+
+.timeline-pull-indicator {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	height: 0;
+	overflow: hidden;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: 14px;
+	transition: height 0.1s ease-out;
+}
+
+.timeline-pull-indicator span:first-child {
+	font-size: 18px;
+}
+
+.timeline-pull-indicator.is-ready {
+	color: var(--interactive-accent);
+}
+
+.timeline-pull-indicator.is-loading {
+	color: var(--interactive-accent);
+}
+
+.timeline-pull-spinner {
+	width: 18px;
+	height: 18px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: timeline-spin 0.8s linear infinite;
 }

@@ -1,7 +1,7 @@
 // Timeline Note Launcher - Settings Tab
 import { App, PluginSettingTab, Setting, Platform } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { SelectionMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, DEFAULT_QUOTE_NOTE_TEMPLATE } from './types';
+import { SelectionMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, UITheme, DEFAULT_QUOTE_NOTE_TEMPLATE, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 import { calculateStatistics, ReviewStatistics } from './dataLayer';
 
 /**
@@ -45,15 +45,17 @@ export class TimelineSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Timeline Note Launcher Settings' });
+		// eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings
+		new Setting(containerEl).setName('Timeline note launcher').setHeading();
 
 		// === 対象ノート設定 ===
-		containerEl.createEl('h3', { text: 'Target Notes' });
+		new Setting(containerEl).setName('Target notes').setHeading();
 
 		new Setting(containerEl)
 			.setName('Target folders')
 			.setDesc('Comma-separated folder paths (empty = all folders)')
 			.addText(text => text
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
 				.setPlaceholder('folder1, folder2/subfolder')
 				.setValue(this.plugin.data.settings.targetFolders.join(', '))
 				.onChange((value) => {
@@ -68,7 +70,8 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Exclude folders')
 			.setDesc('Comma-separated folder paths to exclude from timeline')
 			.addText(text => text
-				.setPlaceholder('.obsidian, templates, archive')
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				.setPlaceholder('templates, archive')
 				.setValue(this.plugin.data.settings.excludeFolders.join(', '))
 				.onChange((value) => {
 					this.plugin.data.settings.excludeFolders = value
@@ -96,6 +99,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Search query')
 			.setDesc('Additional search filter (Obsidian search syntax)')
 			.addText(text => text
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
 				.setPlaceholder('path:notes OR tag:#important')
 				.setValue(this.plugin.data.settings.searchQuery)
 				.onChange((value) => {
@@ -104,15 +108,16 @@ export class TimelineSettingTab extends PluginSettingTab {
 				}));
 
 		// === 選択モード ===
-		containerEl.createEl('h3', { text: 'Selection Mode' });
+		new Setting(containerEl).setName('Selection mode').setHeading();
 
 		new Setting(containerEl)
 			.setName('Selection mode')
 			.setDesc('How to select and order notes')
 			.addDropdown(dropdown => dropdown
 				.addOption('random', 'Random')
-				.addOption('age-priority', 'Age Priority (older = higher)')
-				.addOption('srs', 'SRS (Spaced Repetition)')
+				.addOption('age-priority', 'Age priority (older = higher)')
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				.addOption('srs', 'SRS (spaced repetition)')
 				.setValue(this.plugin.data.settings.selectionMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.selectionMode = value as SelectionMode;
@@ -123,7 +128,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		// === SRS設定（SRSモード時のみ表示） ===
 		if (this.plugin.data.settings.selectionMode === 'srs') {
-			containerEl.createEl('h3', { text: 'SRS Settings' });
+			new Setting(containerEl).setName('SRS').setHeading();
 
 			new Setting(containerEl)
 				.setName('New cards per day')
@@ -163,7 +168,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName('Easy bonus')
-				.setDesc('Multiplier for Easy ratings (1.0 - 2.0)')
+				.setDesc('Multiplier for easy ratings (1.0 - 2.0)')
 				.addSlider(slider => slider
 					.setLimits(1.0, 2.0, 0.1)
 					.setValue(this.plugin.data.settings.easyBonus)
@@ -175,7 +180,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 		}
 
 		// === 表示設定 ===
-		containerEl.createEl('h3', { text: 'Display' });
+		new Setting(containerEl).setName('Display').setHeading();
 
 		new Setting(containerEl)
 			.setName('View mode')
@@ -209,7 +214,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Media size')
-			.setDesc('Maximum height for images and PDF embeds')
+			.setDesc('Maximum height for images')
 			.addDropdown(dropdown => dropdown
 				.addOption('small', 'Small')
 				.addOption('medium', 'Medium')
@@ -256,18 +261,31 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Color theme')
 			.setDesc('Accent color for timeline cards')
 			.addDropdown(dropdown => dropdown
-				.addOption('default', '🎨 Default')
-				.addOption('blue', '🔵 Blue')
-				.addOption('cyan', '🩵 Cyan')
-				.addOption('green', '🟢 Green')
-				.addOption('yellow', '🟡 Yellow')
-				.addOption('orange', '🟠 Orange')
-				.addOption('red', '🔴 Red')
-				.addOption('pink', '🩷 Pink')
-				.addOption('purple', '🟣 Purple')
+				.addOption('default', '🎨 default')
+				.addOption('blue', '🔵 blue')
+				.addOption('cyan', '🩵 cyan')
+				.addOption('green', '🟢 green')
+				.addOption('yellow', '🟡 yellow')
+				.addOption('orange', '🟠 orange')
+				.addOption('red', '🔴 red')
+				.addOption('pink', '🩷 pink')
+				.addOption('purple', '🟣 purple')
 				.setValue(this.plugin.data.settings.colorTheme)
 				.onChange(async (value) => {
 					this.plugin.data.settings.colorTheme = value as ColorTheme;
+					await this.plugin.saveData(this.plugin.data);
+					this.plugin.refreshAllViews();
+				}));
+
+		new Setting(containerEl)
+			.setName('UI theme')
+			.setDesc('Change the overall look and layout')
+			.addDropdown(dropdown => dropdown
+				.addOption('classic', 'Classic')
+				.addOption('twitter', 'Twitter-like')
+				.setValue(this.plugin.data.settings.uiTheme)
+				.onChange(async (value) => {
+					this.plugin.data.settings.uiTheme = value as UITheme;
 					await this.plugin.saveData(this.plugin.data);
 					this.plugin.refreshAllViews();
 				}));
@@ -284,7 +302,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Show difficulty buttons')
-			.setDesc('Display Again/Hard/Good/Easy buttons on cards')
+			.setDesc('Display again/hard/good/easy buttons on cards')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.data.settings.showDifficultyButtons)
 				.onChange(async (value) => {
@@ -296,7 +314,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 		if (!Platform.isMobile) {
 			new Setting(containerEl)
 				.setName('Enable split view')
-				.setDesc('Open notes in split pane (Desktop only)')
+				.setDesc('Open notes in split pane (desktop only)')
 				.addToggle(toggle => toggle
 					.setValue(this.plugin.data.settings.enableSplitView)
 					.onChange(async (value) => {
@@ -306,7 +324,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 			new Setting(containerEl)
 				.setName('Mobile view on desktop')
-				.setDesc('Use mobile-style layout with larger touch targets (Desktop only)')
+				.setDesc('Use mobile-style layout with larger touch targets (desktop only)')
 				.addToggle(toggle => toggle
 					.setValue(this.plugin.data.settings.mobileViewOnDesktop)
 					.onChange(async (value) => {
@@ -318,12 +336,13 @@ export class TimelineSettingTab extends PluginSettingTab {
 		}
 
 		// === YAML連携 ===
-		containerEl.createEl('h3', { text: 'YAML Integration' });
+		new Setting(containerEl).setName('YAML integration').setHeading();
 
 		new Setting(containerEl)
 			.setName('Difficulty YAML key')
 			.setDesc('Read difficulty from this frontmatter key (leave empty to ignore)')
 			.addText(text => text
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
 				.setPlaceholder('difficulty')
 				.setValue(this.plugin.data.settings.yamlDifficultyKey)
 				.onChange(async (value) => {
@@ -335,6 +354,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Priority YAML key')
 			.setDesc('Read priority from this frontmatter key (higher = shown first)')
 			.addText(text => text
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
 				.setPlaceholder('priority')
 				.setValue(this.plugin.data.settings.yamlPriorityKey)
 				.onChange(async (value) => {
@@ -343,7 +363,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				}));
 
 		// === 引用ノート設定 ===
-		containerEl.createEl('h3', { text: 'Quote Note' });
+		new Setting(containerEl).setName('Quote note').setHeading();
 
 		new Setting(containerEl)
 			.setName('Quote note template')
@@ -368,8 +388,45 @@ export class TimelineSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
+		// === クイックノート設定 ===
+		new Setting(containerEl).setName('Quick note (compose box)').setHeading();
+
+		new Setting(containerEl)
+			.setName('Quick note folder')
+			.setDesc('Folder to save quick notes (empty = vault root)')
+			.addText(text => text
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				.setPlaceholder('notes/quick')
+				.setValue(this.plugin.data.settings.quickNoteFolder)
+				.onChange(async (value) => {
+					this.plugin.data.settings.quickNoteFolder = value.trim();
+					await this.plugin.saveData(this.plugin.data);
+				}));
+
+		new Setting(containerEl)
+			.setName('Quick note template')
+			.setDesc('Template for quick notes. Variables: {{uid}}, {{title}}, {{date}}, {{content}}')
+			.addTextArea(textArea => textArea
+				.setPlaceholder(DEFAULT_QUICK_NOTE_TEMPLATE)
+				.setValue(this.plugin.data.settings.quickNoteTemplate)
+				.onChange(async (value) => {
+					this.plugin.data.settings.quickNoteTemplate = value || DEFAULT_QUICK_NOTE_TEMPLATE;
+					await this.plugin.saveData(this.plugin.data);
+				}));
+
+		new Setting(containerEl)
+			.setName('Reset quick note template')
+			.setDesc('Reset quick note template to default')
+			.addButton(button => button
+				.setButtonText('Reset')
+				.onClick(async () => {
+					this.plugin.data.settings.quickNoteTemplate = DEFAULT_QUICK_NOTE_TEMPLATE;
+					await this.plugin.saveData(this.plugin.data);
+					this.display();
+				}));
+
 		// === 動作設定 ===
-		containerEl.createEl('h3', { text: 'Behavior' });
+		new Setting(containerEl).setName('Behavior').setHeading();
 
 		new Setting(containerEl)
 			.setName('Max cards')
@@ -384,6 +441,32 @@ export class TimelineSettingTab extends PluginSettingTab {
 						await this.plugin.saveData(this.plugin.data);
 					}
 				}));
+
+		new Setting(containerEl)
+			.setName('Enable infinite scroll')
+			.setDesc('Load more cards as you scroll down instead of showing all at once')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.data.settings.enableInfiniteScroll)
+				.onChange(async (value) => {
+					this.plugin.data.settings.enableInfiniteScroll = value;
+					await this.plugin.saveData(this.plugin.data);
+					this.plugin.refreshAllViews();
+					this.display();
+				}));
+
+		if (this.plugin.data.settings.enableInfiniteScroll) {
+			new Setting(containerEl)
+				.setName('Batch size')
+				.setDesc('Number of cards to load at once when scrolling (10-100)')
+				.addSlider(slider => slider
+					.setLimits(10, 100, 5)
+					.setValue(this.plugin.data.settings.infiniteScrollBatchSize)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.data.settings.infiniteScrollBatchSize = value;
+						await this.plugin.saveData(this.plugin.data);
+					}));
+		}
 
 		new Setting(containerEl)
 			.setName('Auto refresh interval')
@@ -410,7 +493,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				}));
 
 		// === 統計 ===
-		containerEl.createEl('h3', { text: 'Statistics' });
+		new Setting(containerEl).setName('Statistics').setHeading();
 
 		// 統計を計算
 		const stats = calculateStatistics(
@@ -428,6 +511,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setButtonText('Reset')
 				.setWarning()
 				.onClick(async () => {
+					// eslint-disable-next-line no-alert
 					if (confirm('Are you sure you want to reset all review data?')) {
 						this.plugin.data.reviewLogs = {};
 						this.plugin.data.dailyStats = {
@@ -458,17 +542,19 @@ export class TimelineSettingTab extends PluginSettingTab {
 		// ストリーク表示
 		if (stats.currentStreak > 0) {
 			const streakEl = dashboard.createDiv({ cls: 'timeline-stats-streak' });
-			streakEl.innerHTML = `<span class="timeline-streak-icon">🔥</span> <span class="timeline-streak-count">${stats.currentStreak}</span> day streak!`;
+			streakEl.createSpan({ cls: 'timeline-streak-icon', text: '🔥' });
+			streakEl.createSpan({ cls: 'timeline-streak-count', text: `${stats.currentStreak}` });
+			streakEl.createSpan({ text: ' day streak!' });
 		}
 
 		// ヒートマップ
 		const heatmapSection = dashboard.createDiv({ cls: 'timeline-stats-heatmap-section' });
-		heatmapSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'Activity (Last 30 days)' });
+		heatmapSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'Activity (last 30 days)' });
 		this.renderHeatmap(heatmapSection, stats.heatmapData);
 
 		// ファイルタイプ別統計
 		const typeSection = dashboard.createDiv({ cls: 'timeline-stats-types-section' });
-		typeSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'By File Type (30 days)' });
+		typeSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'By file type (30 days)' });
 		this.renderFileTypeBreakdown(typeSection, stats.fileTypeBreakdown);
 
 		// 詳細統計
@@ -536,6 +622,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		const types: { key: string; icon: string; label: string }[] = [
 			{ key: 'markdown', icon: '📝', label: 'Markdown' },
+			{ key: 'text', icon: '📃', label: 'Text' },
 			{ key: 'image', icon: '🖼️', label: 'Image' },
 			{ key: 'pdf', icon: '📄', label: 'PDF' },
 			{ key: 'audio', icon: '🎵', label: 'Audio' },

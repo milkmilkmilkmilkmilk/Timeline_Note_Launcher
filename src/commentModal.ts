@@ -77,15 +77,15 @@ export class CommentModal extends Modal {
 			text: '保存',
 			cls: 'timeline-comment-btn timeline-comment-btn-save',
 		});
-		saveBtn.addEventListener('click', async () => {
-			await this.saveComment();
+		saveBtn.addEventListener('click', () => {
+			void this.saveComment();
 		});
 
 		// Enter + Ctrl/Cmd で保存
-		this.textArea.addEventListener('keydown', async (e) => {
+		this.textArea.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
 				e.preventDefault();
-				await this.saveComment();
+				void this.saveComment();
 			}
 		});
 
@@ -93,10 +93,10 @@ export class CommentModal extends Modal {
 		this.textArea.focus();
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): void {
 		// モーダルを閉じるときにドラフトを保存
 		const comment = this.textArea?.value ?? '';
-		await this.plugin.saveCommentDraft(this.file.path, comment);
+		void this.plugin.saveCommentDraft(this.file.path, comment);
 	}
 
 	private async saveComment(): Promise<void> {

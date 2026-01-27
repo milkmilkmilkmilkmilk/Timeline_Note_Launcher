@@ -91,8 +91,6 @@ function selectSRS(
 	dailyNewReviewed: number,
 	dailyReviewedCount: number
 ): SelectionResult {
-	const now = Date.now();
-
 	// カードを分類
 	const dueCards = cards.filter(c => c.isDue);
 	const newCards = cards.filter(c => c.isNew);

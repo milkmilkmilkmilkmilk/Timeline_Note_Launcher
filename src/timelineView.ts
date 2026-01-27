@@ -1,6 +1,6 @@
 // Timeline Note Launcher - Timeline View
 import { ItemView, WorkspaceLeaf, Platform, TFile, MarkdownRenderer, Component, Menu } from 'obsidian';
-import { TimelineCard, DifficultyRating, ColorTheme, ViewMode, ImageSizeMode } from './types';
+import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 import { getNextIntervals, getBookmarkedPaths, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
@@ -33,7 +33,7 @@ export class TimelineView extends ItemView {
 	private keydownHandler: (e: KeyboardEvent) => void;
 	// フィルタ状態
 	private searchQuery: string = '';
-	private fileTypeFilters: Set<string> = new Set(['markdown', 'image', 'pdf', 'audio', 'video', 'other']);
+	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'other']);
 	private selectedTags: Set<string> = new Set();
 	private searchDebounceTimer: number | null = null;
 	// 直前にアクティブだったleaf（タイムライン以外）
@@ -42,12 +42,29 @@ export class TimelineView extends ItemView {
 	private lastCardPaths: string[] = [];
 	// ブックマークパスのキャッシュ
 	private cachedBookmarkedPaths: Set<string> | null = null;
+	// 無限スクロール用
+	private displayedCount: number = 0;
+	private isLoadingMore: boolean = false;
+	private scrollHandler: () => void;
+	private listEl: HTMLElement | null = null;
+	// プルトゥリフレッシュ用
+	private pullToRefreshStartY: number = 0;
+	private pullToRefreshTriggered: boolean = false;
+	private pullIndicatorEl: HTMLElement | null = null;
+	private touchStartHandler: (e: TouchEvent) => void;
+	private touchMoveHandler: (e: TouchEvent) => void;
+	private touchEndHandler: (e: TouchEvent) => void;
 
 	constructor(leaf: WorkspaceLeaf, plugin: TimelineNoteLauncherPlugin) {
 		super(leaf);
 		this.plugin = plugin;
 		this.renderComponent = new Component();
 		this.keydownHandler = this.handleKeydown.bind(this);
+		this.scrollHandler = this.handleScroll.bind(this);
+		// プルトゥリフレッシュ用
+		this.touchStartHandler = this.handleTouchStart.bind(this);
+		this.touchMoveHandler = this.handleTouchMove.bind(this);
+		this.touchEndHandler = this.handleTouchEnd.bind(this);
 	}
 
 	getViewType(): string {
@@ -71,6 +88,16 @@ export class TimelineView extends ItemView {
 		// キーボードショートカット登録
 		this.listContainerEl.tabIndex = 0;
 		this.listContainerEl.addEventListener('keydown', this.keydownHandler);
+
+		// 無限スクロール用スクロールイベント登録
+		this.listContainerEl.addEventListener('scroll', this.scrollHandler);
+
+		// プルトゥリフレッシュ用タッチイベント登録（モバイルのみ）
+		if (Platform.isMobile) {
+			this.listContainerEl.addEventListener('touchstart', this.touchStartHandler, { passive: true });
+			this.listContainerEl.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
+			this.listContainerEl.addEventListener('touchend', this.touchEndHandler, { passive: true });
+		}
 
 		// アクティブleafの変更を監視して、タイムライン以外のleafを記録
 		this.registerEvent(
@@ -120,13 +147,31 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
+	 * UIテーマの更新
+	 */
+	private updateUITheme(): void {
+		const uiTheme = this.plugin.data.settings.uiTheme;
+		const themes: UITheme[] = ['classic', 'twitter'];
+
+		// 既存のUIテーマクラスを削除
+		for (const t of themes) {
+			this.listContainerEl.removeClass(`timeline-ui-${t}`);
+		}
+
+		// 新しいUIテーマクラスを追加
+		this.listContainerEl.addClass(`timeline-ui-${uiTheme}`);
+	}
+
+	/**
 	 * モバイルモードを切り替え（PCのみ）
 	 */
 	async toggleMobileView(): Promise<void> {
 		if (Platform.isMobile) return;
 		this.plugin.data.settings.mobileViewOnDesktop = !this.plugin.data.settings.mobileViewOnDesktop;
-		this.plugin.saveData(this.plugin.data);
+		void this.plugin.saveData(this.plugin.data);
 		this.updateMobileClass();
+		// 強制的に再描画するためにキャッシュをクリア
+		this.lastCardPaths = [];
 		await this.render();
 	}
 
@@ -137,6 +182,14 @@ export class TimelineView extends ItemView {
 		this.renderComponent.unload();
 		// キーボードリスナーを解除
 		this.listContainerEl.removeEventListener('keydown', this.keydownHandler);
+		// スクロールリスナーを解除
+		this.listContainerEl.removeEventListener('scroll', this.scrollHandler);
+		// タッチリスナーを解除
+		if (Platform.isMobile) {
+			this.listContainerEl.removeEventListener('touchstart', this.touchStartHandler);
+			this.listContainerEl.removeEventListener('touchmove', this.touchMoveHandler);
+			this.listContainerEl.removeEventListener('touchend', this.touchEndHandler);
+		}
 	}
 
 	/**
@@ -149,6 +202,7 @@ export class TimelineView extends ItemView {
 		// 表示設定を更新（設定との同期）
 		this.updateMobileClass();
 		this.updateColorTheme();
+		this.updateUITheme();
 
 		// ブックマークキャッシュを更新
 		this.cachedBookmarkedPaths = getBookmarkedPaths(this.app);
@@ -212,13 +266,15 @@ export class TimelineView extends ItemView {
 			cls: 'timeline-refresh-btn',
 			text: '↻',
 		});
-		refreshBtn.addEventListener('click', () => this.refresh());
+		refreshBtn.addEventListener('click', () => { void this.refresh(); });
 
 		// SRSモードでは統計を表示
 		const settings = this.plugin.data.settings;
 		if (settings.selectionMode === 'srs') {
 			const statsEl = leftSection.createSpan({ cls: 'timeline-stats' });
-			statsEl.innerHTML = `<span class="timeline-stat-new">${this.newCount} new</span> · <span class="timeline-stat-due">${this.dueCount} due</span>`;
+			statsEl.createSpan({ cls: 'timeline-stat-new', text: `${this.newCount} new` });
+			statsEl.createSpan({ text: ' · ' });
+			statsEl.createSpan({ cls: 'timeline-stat-due', text: `${this.dueCount} due` });
 		}
 
 		const rightSection = header.createDiv({ cls: 'timeline-header-right' });
@@ -231,7 +287,7 @@ export class TimelineView extends ItemView {
 				text: isMobileView ? '📱' : '🖥️',
 				attr: { 'aria-label': isMobileView ? 'Switch to PC view' : 'Switch to Mobile view' },
 			});
-			toggleBtn.addEventListener('click', () => this.toggleMobileView());
+			toggleBtn.addEventListener('click', () => { void this.toggleMobileView(); });
 		}
 
 		// リスト/グリッド切り替えボタン
@@ -241,7 +297,10 @@ export class TimelineView extends ItemView {
 			text: viewMode === 'list' ? '▤' : '▦',
 			attr: { 'aria-label': viewMode === 'list' ? 'Switch to Grid view' : 'Switch to List view' },
 		});
-		viewModeBtn.addEventListener('click', () => this.toggleViewMode());
+		viewModeBtn.addEventListener('click', () => { void this.toggleViewMode(); });
+
+		// クイックノート作成ボックスを描画
+		this.renderComposeBox();
 
 		// フィルタバーを描画
 		this.renderFilterBar();
@@ -261,26 +320,43 @@ export class TimelineView extends ItemView {
 		// カードリスト/グリッド
 		const isGridMode = settings.viewMode === 'grid';
 		const listCls = isGridMode ? `timeline-grid timeline-grid-cols-${settings.gridColumns}` : 'timeline-list';
-		const listEl = this.listContainerEl.createDiv({ cls: listCls });
+		this.listEl = this.listContainerEl.createDiv({ cls: listCls });
 
 		// カード要素配列をリセット
 		this.cardElements = [];
 
-		for (const card of this.filteredCards) {
+		// 無限スクロール対応：初期表示数を決定
+		const enableInfiniteScroll = settings.enableInfiniteScroll;
+		const batchSize = settings.infiniteScrollBatchSize || 20;
+		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
+		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
+
+		// 初期カードを描画
+		for (let i = 0; i < this.displayedCount; i++) {
+			const card = this.filteredCards[i];
+			if (!card) continue;
 			const cardEl = isGridMode
 				? await this.createGridCardElement(card)
 				: await this.createCardElement(card);
-			listEl.appendChild(cardEl);
+			this.listEl.appendChild(cardEl);
 			this.cardElements.push(cardEl);
 		}
 
-		// 下部リフレッシュボタン
+		// 下部フッター
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
-		const bottomRefreshBtn = footer.createEl('button', {
-			cls: 'timeline-refresh-btn',
-			text: '↻',
-		});
-		bottomRefreshBtn.addEventListener('click', () => this.refresh());
+
+		// 無限スクロール時はローディングインジケーター、そうでなければリフレッシュボタン
+		if (enableInfiniteScroll && this.displayedCount < this.filteredCards.length) {
+			const loadingEl = footer.createDiv({ cls: 'timeline-loading-indicator' });
+			loadingEl.createSpan({ cls: 'timeline-loading-spinner' });
+			loadingEl.createSpan({ cls: 'timeline-loading-text', text: 'Scroll for more...' });
+		} else {
+			const bottomRefreshBtn = footer.createEl('button', {
+				cls: 'timeline-refresh-btn',
+				text: '↻',
+			});
+			bottomRefreshBtn.addEventListener('click', () => { void this.refresh(); });
+		}
 
 		// フォーカスインデックスをリセット
 		this.focusedIndex = -1;
@@ -293,7 +369,155 @@ export class TimelineView extends ItemView {
 		const currentMode = this.plugin.data.settings.viewMode;
 		this.plugin.data.settings.viewMode = currentMode === 'list' ? 'grid' : 'list';
 		await this.plugin.saveData(this.plugin.data);
+		// 強制的に再描画するためにキャッシュをクリア
+		this.lastCardPaths = [];
 		await this.render();
+	}
+
+	/**
+	 * クイックノート作成ボックスを描画
+	 */
+	private renderComposeBox(): void {
+		const composeBox = this.listContainerEl.createDiv({ cls: 'timeline-compose-box' });
+
+		// アバター風のアイコン
+		const avatarEl = composeBox.createDiv({ cls: 'timeline-compose-avatar' });
+		avatarEl.textContent = '📝';
+
+		// 入力エリア
+		const inputArea = composeBox.createDiv({ cls: 'timeline-compose-input-area' });
+
+		const textarea = inputArea.createEl('textarea', {
+			cls: 'timeline-compose-textarea',
+			attr: {
+				placeholder: "What's on your mind?",
+				rows: '1',
+			},
+		});
+
+		// テキストエリアの自動リサイズ
+		textarea.addEventListener('input', () => {
+			// eslint-disable-next-line obsidianmd/no-static-styles-assignment
+			textarea.style.height = 'auto';
+			// eslint-disable-next-line obsidianmd/no-static-styles-assignment
+			textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+		});
+
+		// アクションバー
+		const actionsBar = inputArea.createDiv({ cls: 'timeline-compose-actions' });
+
+		// 文字数カウンター
+		const charCounter = actionsBar.createSpan({ cls: 'timeline-compose-char-counter' });
+		charCounter.textContent = '0';
+
+		textarea.addEventListener('input', () => {
+			charCounter.textContent = String(textarea.value.length);
+		});
+
+		// 投稿ボタン
+		const postBtn = actionsBar.createEl('button', {
+			cls: 'timeline-compose-post-btn',
+			text: 'Post',
+		});
+		postBtn.disabled = true;
+
+		textarea.addEventListener('input', () => {
+			postBtn.disabled = textarea.value.trim().length === 0;
+		});
+
+		postBtn.addEventListener('click', () => {
+			const content = textarea.value.trim();
+			if (content.length === 0) return;
+
+			postBtn.disabled = true;
+			postBtn.textContent = 'Posting...';
+
+			void this.createQuickNote(content).then(() => {
+				textarea.value = '';
+				// eslint-disable-next-line obsidianmd/no-static-styles-assignment
+				textarea.style.height = 'auto';
+				charCounter.textContent = '0';
+				postBtn.textContent = 'Post';
+
+				// タイムラインをリフレッシュ
+				void this.refresh();
+			}).catch((error: unknown) => {
+				console.error('Failed to create quick note:', error);
+				postBtn.textContent = 'Post';
+				postBtn.disabled = false;
+			});
+		});
+
+		// Ctrl+Enter で投稿
+		textarea.addEventListener('keydown', (e) => {
+			if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !postBtn.disabled) {
+				e.preventDefault();
+				postBtn.click();
+			}
+		});
+	}
+
+	/**
+	 * クイックノートを作成
+	 */
+	private async createQuickNote(content: string): Promise<void> {
+		const settings = this.plugin.data.settings;
+		const template = settings.quickNoteTemplate || DEFAULT_QUICK_NOTE_TEMPLATE;
+
+		// UID生成（タイムスタンプベース）
+		const now = new Date();
+		const uid = now.getTime().toString(36);
+
+		// 日付フォーマット
+		const dateParts = now.toISOString().split('T');
+		const dateStr = dateParts[0] ?? '';
+
+		// タイトル生成（最初の行または最初の50文字）
+		const lines = content.split('\n');
+		const firstLine = lines[0] ?? '';
+		const title = firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine;
+
+		// テンプレートを適用
+		const noteContent = template
+			.replace(/\{\{uid\}\}/g, uid)
+			.replace(/\{\{title\}\}/g, title)
+			.replace(/\{\{date\}\}/g, dateStr)
+			.replace(/\{\{content\}\}/g, content);
+
+		// ファイル名を生成（タイムスタンプ + タイトルの一部）
+		const safeTitle = title
+			.replace(/[\\/:*?"<>|#^[\]]/g, '')
+			.replace(/\s+/g, '_')
+			.substring(0, 30);
+		const fileName = `${dateStr}_${uid}_${safeTitle}.md`;
+
+		// 保存先フォルダ
+		const folder = settings.quickNoteFolder.trim();
+		const filePath = folder ? `${folder}/${fileName}` : fileName;
+
+		// フォルダが存在しない場合は作成（ネストされたフォルダにも対応）
+		if (folder) {
+			const folderExists = this.app.vault.getAbstractFileByPath(folder);
+			if (!folderExists) {
+				const parts = folder.split('/');
+				let currentPath = '';
+				for (const part of parts) {
+					currentPath = currentPath ? `${currentPath}/${part}` : part;
+					const exists = this.app.vault.getAbstractFileByPath(currentPath);
+					if (!exists) {
+						try {
+							await this.app.vault.createFolder(currentPath);
+						} catch (err) {
+							console.error(`Failed to create folder: ${currentPath}`, err);
+							throw new Error(`フォルダの作成に失敗しました: ${currentPath}`);
+						}
+					}
+				}
+			}
+		}
+
+		// ノートを作成
+		await this.app.vault.create(filePath, noteContent);
 	}
 
 	/**
@@ -323,10 +547,13 @@ export class TimelineView extends ItemView {
 		const typeFilters = filterBar.createDiv({ cls: 'timeline-filter-types' });
 		const fileTypes: { type: string; icon: string; label: string }[] = [
 			{ type: 'markdown', icon: '📝', label: 'Markdown' },
+			{ type: 'text', icon: '📃', label: 'Text' },
 			{ type: 'image', icon: '🖼️', label: 'Image' },
 			{ type: 'pdf', icon: '📄', label: 'PDF' },
 			{ type: 'audio', icon: '🎵', label: 'Audio' },
 			{ type: 'video', icon: '🎬', label: 'Video' },
+			{ type: 'office', icon: '📊', label: 'Office' },
+			{ type: 'ipynb', icon: '📓', label: 'Jupyter' },
 		];
 
 		for (const ft of fileTypes) {
@@ -335,7 +562,7 @@ export class TimelineView extends ItemView {
 				cls: `timeline-filter-type-btn ${isActive ? 'is-active' : ''}`,
 				attr: { 'aria-label': ft.label, 'data-type': ft.type },
 			});
-			btn.innerHTML = ft.icon;
+			btn.textContent = ft.icon;
 			btn.addEventListener('click', () => this.toggleFileTypeFilter(ft.type));
 		}
 
@@ -392,7 +619,7 @@ export class TimelineView extends ItemView {
 
 		this.searchDebounceTimer = window.setTimeout(() => {
 			this.searchQuery = query;
-			this.renderCardList();
+			void this.renderCardList();
 		}, 300);
 	}
 
@@ -408,7 +635,7 @@ export class TimelineView extends ItemView {
 		} else {
 			this.fileTypeFilters.add(type);
 		}
-		this.renderCardList();
+		void this.renderCardList();
 	}
 
 	/**
@@ -420,7 +647,7 @@ export class TimelineView extends ItemView {
 		} else {
 			this.selectedTags.add(tag);
 		}
-		this.renderCardList();
+		void this.renderCardList();
 	}
 
 	/**
@@ -476,22 +703,34 @@ export class TimelineView extends ItemView {
 		this.updateFilterBarUI();
 
 		// カードリスト/グリッドを再描画
-		const isGridMode = this.plugin.data.settings.viewMode === 'grid';
-		const listEl = this.listContainerEl.querySelector('.timeline-list, .timeline-grid');
-		if (!listEl) return;
+		const settings = this.plugin.data.settings;
+		const isGridMode = settings.viewMode === 'grid';
+		this.listEl = this.listContainerEl.querySelector('.timeline-list, .timeline-grid') as HTMLElement;
+		if (!this.listEl) return;
 
-		listEl.empty();
+		this.listEl.empty();
 		this.cardElements = [];
 
-		for (const card of this.filteredCards) {
+		// 無限スクロール対応：初期表示数を決定
+		const enableInfiniteScroll = settings.enableInfiniteScroll;
+		const batchSize = settings.infiniteScrollBatchSize || 20;
+		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
+		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
+
+		for (let i = 0; i < this.displayedCount; i++) {
+			const card = this.filteredCards[i];
+			if (!card) continue;
 			const cardEl = isGridMode
 				? await this.createGridCardElement(card)
 				: await this.createCardElement(card);
-			listEl.appendChild(cardEl);
+			this.listEl.appendChild(cardEl);
 			this.cardElements.push(cardEl);
 		}
 
 		this.focusedIndex = -1;
+
+		// フッターを更新
+		this.updateFooter();
 	}
 
 	/**
@@ -535,6 +774,37 @@ export class TimelineView extends ItemView {
 		// メインコンテンツ領域
 		const contentEl = cardEl.createDiv({ cls: 'timeline-card-content' });
 
+		// Twitter風ヘッダー（フォルダ + タイムスタンプ）
+		const headerEl = contentEl.createDiv({ cls: 'timeline-card-header' });
+		const folderPath = card.path.includes('/') ? card.path.substring(0, card.path.lastIndexOf('/')) : '';
+		headerEl.createSpan({ cls: 'timeline-card-header-folder', text: `📁 ${folderPath || 'Root'}` });
+		headerEl.createSpan({ cls: 'timeline-card-header-separator', text: ' · ' });
+		if (card.lastReviewedAt) {
+			const date = new Date(card.lastReviewedAt);
+			headerEl.createSpan({ cls: 'timeline-card-header-time', text: this.formatRelativeDate(date) });
+		} else {
+			headerEl.createSpan({ cls: 'timeline-card-header-time', text: 'New' });
+		}
+		// ブックマークアイコン（ヘッダー用）
+		const isBookmarked = this.isFileBookmarked(card.path);
+		const headerBookmarkBtn = headerEl.createEl('button', {
+			cls: `timeline-card-header-bookmark ${isBookmarked ? 'is-bookmarked' : ''}`,
+		});
+		headerBookmarkBtn.textContent = isBookmarked ? '★' : '☆';
+		headerBookmarkBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void this.toggleBookmark(card.path).then(nowBookmarked => {
+				headerBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
+				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+				// 同期：タイトル行のブックマークボタンも更新
+				const titleBookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
+				if (titleBookmarkBtn) {
+					titleBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
+					titleBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+				}
+			});
+		});
+
 		// タイトル行
 		const titleRow = contentEl.createDiv({ cls: 'timeline-card-title-row' });
 
@@ -561,15 +831,15 @@ export class TimelineView extends ItemView {
 			titleRow.createSpan({ cls: 'timeline-badge timeline-badge-due', text: 'DUE' });
 		}
 
-		// コメントボタン（マークダウンのみ）
+		// コメントボタン（マークダウンのみ）- Classic用
 		if (card.fileType === 'markdown') {
 			const hasDraft = this.plugin.hasCommentDraft(card.path);
 			const commentBtn = titleRow.createEl('button', {
 				cls: `timeline-comment-btn ${hasDraft ? 'has-draft' : ''}`,
 				attr: { 'aria-label': 'コメントを追加' },
 			});
-			commentBtn.innerHTML = '💬';
-			commentBtn.addEventListener('click', async (e) => {
+			commentBtn.textContent = '💬';
+			commentBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
 				if (file && file instanceof TFile) {
@@ -578,14 +848,14 @@ export class TimelineView extends ItemView {
 				}
 			});
 
-			// 引用ノートボタン（マークダウンのみ）
+			// 引用ノートボタン（マークダウンのみ）- Classic用
 			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
 			const quoteNoteBtn = titleRow.createEl('button', {
 				cls: `timeline-quote-note-btn ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
 				attr: { 'aria-label': '引用ノート' },
 			});
-			quoteNoteBtn.innerHTML = '🔄';
-			quoteNoteBtn.addEventListener('click', async (e) => {
+			quoteNoteBtn.textContent = '🔄';
+			quoteNoteBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
 				if (file && file instanceof TFile) {
@@ -595,56 +865,23 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// ブックマークボタン
-		const isBookmarked = this.isFileBookmarked(card.path);
+		// ブックマークボタン - Classic用
 		const bookmarkBtn = titleRow.createEl('button', {
 			cls: `timeline-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
 			attr: { 'aria-label': isBookmarked ? 'Remove bookmark' : 'Add bookmark' },
 		});
-		bookmarkBtn.innerHTML = isBookmarked ? '★' : '☆';
-		bookmarkBtn.addEventListener('click', async (e) => {
+		bookmarkBtn.textContent = isBookmarked ? '★' : '☆';
+		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			const nowBookmarked = await this.toggleBookmark(card.path);
-			bookmarkBtn.innerHTML = nowBookmarked ? '★' : '☆';
-			bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-			bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
+			void this.toggleBookmark(card.path).then(nowBookmarked => {
+				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
+				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+				bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
+				// 同期：ヘッダーのブックマークボタンも更新
+				headerBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
+				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+			});
 		});
-
-		// サムネイル画像 / PDF埋め込み
-		if (card.firstImagePath) {
-			if (card.fileType === 'pdf') {
-				// PDF埋め込み表示
-				const pdfFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
-				if (pdfFile && pdfFile instanceof TFile) {
-					const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
-					const resourcePath = this.app.vault.getResourcePath(pdfFile);
-					thumbnailEl.createEl('embed', {
-						attr: {
-							src: resourcePath,
-							type: 'application/pdf',
-						},
-					});
-				}
-			} else {
-				// 画像サムネイル
-				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail' });
-				if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
-					// 外部URL
-					thumbnailEl.createEl('img', {
-						attr: { src: card.firstImagePath, alt: 'thumbnail' },
-					});
-				} else {
-					// 内部ファイル
-					const imageFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
-					if (imageFile && imageFile instanceof TFile) {
-						const resourcePath = this.app.vault.getResourcePath(imageFile);
-						thumbnailEl.createEl('img', {
-							attr: { src: resourcePath, alt: 'thumbnail' },
-						});
-					}
-				}
-			}
-		}
 
 		// プレビュー
 		const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
@@ -671,6 +908,48 @@ export class TimelineView extends ItemView {
 			});
 		}
 
+		// サムネイル画像 / PDF埋め込み
+		if (card.firstImagePath) {
+			if (card.fileType === 'pdf') {
+				// PDF埋め込み表示
+				const pdfFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
+				if (pdfFile && pdfFile instanceof TFile) {
+					const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
+					const resourcePath = this.app.vault.getResourcePath(pdfFile);
+					thumbnailEl.createEl('embed', {
+						attr: {
+							src: resourcePath,
+							type: 'application/pdf',
+						},
+					});
+					// PDFクリック時のイベント伝播を停止
+					thumbnailEl.addEventListener('click', (e) => {
+						e.stopPropagation();
+					});
+					// オープンボタンを追加
+					this.createPdfOpenButton(thumbnailEl, card);
+				}
+			} else {
+				// 画像サムネイル
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail' });
+				if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
+					// 外部URL
+					thumbnailEl.createEl('img', {
+						attr: { src: card.firstImagePath, alt: 'thumbnail' },
+					});
+				} else {
+					// 内部ファイル
+					const imageFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
+					if (imageFile && imageFile instanceof TFile) {
+						const resourcePath = this.app.vault.getResourcePath(imageFile);
+						thumbnailEl.createEl('img', {
+							attr: { src: resourcePath, alt: 'thumbnail' },
+						});
+					}
+				}
+			}
+		}
+
 		// リンクリスト
 		if (card.outgoingLinks.length > 0 || card.backlinks.length > 0) {
 			const linksEl = contentEl.createDiv({ cls: 'timeline-card-links' });
@@ -685,11 +964,11 @@ export class TimelineView extends ItemView {
 						cls: 'timeline-link-item',
 						text: link.title,
 					});
-					linkEl.addEventListener('click', async (e) => {
+					linkEl.addEventListener('click', (e) => {
 						e.stopPropagation();
 						const file = this.app.vault.getAbstractFileByPath(link.path);
 						if (file && file instanceof TFile) {
-							await this.app.workspace.getLeaf().openFile(file);
+							void this.app.workspace.getLeaf().openFile(file);
 						}
 					});
 				}
@@ -711,11 +990,11 @@ export class TimelineView extends ItemView {
 						cls: 'timeline-link-item',
 						text: link.title,
 					});
-					linkEl.addEventListener('click', async (e) => {
+					linkEl.addEventListener('click', (e) => {
 						e.stopPropagation();
 						const file = this.app.vault.getAbstractFileByPath(link.path);
 						if (file && file instanceof TFile) {
-							await this.app.workspace.getLeaf().openFile(file);
+							void this.app.workspace.getLeaf().openFile(file);
 						}
 					});
 				}
@@ -728,7 +1007,7 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// メタ情報
+		// メタ情報（Classic用）
 		if (this.plugin.data.settings.showMeta) {
 			const metaEl = contentEl.createDiv({ cls: 'timeline-card-meta' });
 
@@ -752,9 +1031,64 @@ export class TimelineView extends ItemView {
 			}
 		}
 
+		// Twitter風アクションバー
+		const actionsEl = contentEl.createDiv({ cls: 'timeline-card-actions' });
+
+		// コメントアクション（マークダウンのみ）
+		if (card.fileType === 'markdown') {
+			const hasDraft = this.plugin.hasCommentDraft(card.path);
+			const commentAction = actionsEl.createEl('button', {
+				cls: `timeline-action-btn timeline-action-comment ${hasDraft ? 'has-draft' : ''}`,
+			});
+			commentAction.createSpan({ text: '💬' });
+			commentAction.createSpan({ cls: 'timeline-action-label', text: 'Comment' });
+			commentAction.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					const modal = new CommentModal(this.app, this.plugin, file);
+					modal.open();
+				}
+			});
+
+			// 引用アクション
+			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
+			const quoteAction = actionsEl.createEl('button', {
+				cls: `timeline-action-btn timeline-action-quote ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
+			});
+			quoteAction.createSpan({ text: '🔄' });
+			quoteAction.createSpan({ cls: 'timeline-action-label', text: 'Quote' });
+			quoteAction.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const file = this.app.vault.getAbstractFileByPath(card.path);
+				if (file && file instanceof TFile) {
+					const modal = new QuoteNoteModal(this.app, this.plugin, file);
+					modal.open();
+				}
+			});
+		}
+
+		// レビュー数アクション
+		if (card.reviewCount > 0) {
+			const reviewAction = actionsEl.createDiv({ cls: 'timeline-action-btn timeline-action-reviews' });
+			reviewAction.createSpan({ text: '⭐' });
+			reviewAction.createSpan({ cls: 'timeline-action-label', text: `${card.reviewCount} reviews` });
+		}
+
+		// タグ表示（Twitter風）
+		if (card.tags.length > 0) {
+			const tagsAction = actionsEl.createDiv({ cls: 'timeline-action-tags' });
+			for (const tag of card.tags.slice(0, 2)) {
+				tagsAction.createSpan({ cls: 'timeline-action-tag', text: tag });
+			}
+			if (card.tags.length > 2) {
+				tagsAction.createSpan({ cls: 'timeline-action-tag-more', text: `+${card.tags.length - 2}` });
+			}
+		}
+
 		// クリック/タップでノートを開く
-		contentEl.addEventListener('click', async () => {
-			await this.openNote(card);
+		contentEl.addEventListener('click', () => {
+			void this.openNote(card);
 		});
 
 		// 右クリックでコンテキストメニュー
@@ -780,10 +1114,11 @@ export class TimelineView extends ItemView {
 			// 既読ショートカット（右端をタップ）
 			const markReadBtn = cardEl.createDiv({ cls: 'timeline-mark-read' });
 			markReadBtn.textContent = '✓';
-			markReadBtn.addEventListener('click', async (e) => {
+			markReadBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				await this.plugin.markAsReviewed(card.path);
-				cardEl.addClass('timeline-card-reviewed');
+				void this.plugin.markAsReviewed(card.path).then(() => {
+					cardEl.addClass('timeline-card-reviewed');
+				});
 			});
 		}
 
@@ -822,6 +1157,12 @@ export class TimelineView extends ItemView {
 							type: 'application/pdf',
 						},
 					});
+					// PDFクリック時のイベント伝播を停止
+					thumbnailEl.addEventListener('click', (e) => {
+						e.stopPropagation();
+					});
+					// オープンボタンを追加
+					this.createPdfOpenButton(thumbnailEl, card);
 				}
 			} else if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
 				thumbnailEl.createEl('img', {
@@ -862,12 +1203,13 @@ export class TimelineView extends ItemView {
 		const bookmarkBtn = overlayEl.createEl('button', {
 			cls: `timeline-grid-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
 		});
-		bookmarkBtn.innerHTML = isBookmarked ? '★' : '☆';
-		bookmarkBtn.addEventListener('click', async (e) => {
+		bookmarkBtn.textContent = isBookmarked ? '★' : '☆';
+		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			const nowBookmarked = await this.toggleBookmark(card.path);
-			bookmarkBtn.innerHTML = nowBookmarked ? '★' : '☆';
-			bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+			void this.toggleBookmark(card.path).then(nowBookmarked => {
+				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
+				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+			});
 		});
 
 		// タイトル
@@ -898,8 +1240,8 @@ export class TimelineView extends ItemView {
 		}
 
 		// クリックでノートを開く
-		cardEl.addEventListener('click', async () => {
-			await this.openNote(card);
+		cardEl.addEventListener('click', () => {
+			void this.openNote(card);
 		});
 
 		// 右クリックでコンテキストメニュー
@@ -914,6 +1256,20 @@ export class TimelineView extends ItemView {
 		});
 
 		return cardEl;
+	}
+
+	/**
+	 * PDFオープンボタンを作成
+	 */
+	private createPdfOpenButton(container: HTMLElement, card: TimelineCard): void {
+		const openBtn = container.createEl('button', {
+			cls: 'timeline-pdf-open-btn',
+			text: '📄 open',
+		});
+		openBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void this.openNote(card);
+		});
 	}
 
 	/**
@@ -937,10 +1293,11 @@ export class TimelineView extends ItemView {
 			buttonEl.createSpan({ cls: 'timeline-btn-label', text: btn.label });
 			buttonEl.createSpan({ cls: 'timeline-btn-interval', text: btn.interval });
 
-			buttonEl.addEventListener('click', async (e) => {
+			buttonEl.addEventListener('click', (e) => {
 				e.stopPropagation();
-				await this.plugin.rateCard(card.path, btn.rating);
-				container.closest('.timeline-card')?.addClass('timeline-card-reviewed');
+				void this.plugin.rateCard(card.path, btn.rating).then(() => {
+					container.closest('.timeline-card')?.addClass('timeline-card-reviewed');
+				});
 			});
 		}
 	}
@@ -965,7 +1322,7 @@ export class TimelineView extends ItemView {
 			// 直前のleafと同じタブグループに新しいタブを作成
 			const parent = this.previousActiveLeaf.parent;
 			if (parent) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 				targetLeaf = (this.app.workspace as any).createLeafInParent(parent, -1);
 			} else {
 				targetLeaf = this.app.workspace.getLeaf('tab');
@@ -976,7 +1333,7 @@ export class TimelineView extends ItemView {
 			if (adjacentLeaf) {
 				const parent = adjacentLeaf.parent;
 				if (parent) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 					targetLeaf = (this.app.workspace as any).createLeafInParent(parent, -1);
 				} else {
 					targetLeaf = this.app.workspace.getLeaf('tab');
@@ -1042,10 +1399,13 @@ export class TimelineView extends ItemView {
 	 */
 	private getFileTypeIcon(fileType: string): string {
 		switch (fileType) {
+			case 'text': return '📃';
 			case 'image': return '🖼️';
 			case 'pdf': return '📄';
 			case 'audio': return '🎵';
 			case 'video': return '🎬';
+			case 'office': return '📊';
+			case 'ipynb': return '📓';
 			default: return '📁';
 		}
 	}
@@ -1068,14 +1428,18 @@ export class TimelineView extends ItemView {
 	 * ブックマークをトグル
 	 */
 	private async toggleBookmark(path: string): Promise<boolean> {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 		const bookmarksPlugin = (this.app as any).internalPlugins?.plugins?.bookmarks;
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		if (!bookmarksPlugin?.enabled || !bookmarksPlugin?.instance) {
 			return false;
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 		const instance = bookmarksPlugin.instance;
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 		const items = instance.items || [];
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 		const existingIndex = items.findIndex((item: { type: string; path?: string }) =>
 			item.type === 'file' && item.path === path
 		);
@@ -1083,12 +1447,14 @@ export class TimelineView extends ItemView {
 		let result: boolean;
 		if (existingIndex >= 0) {
 			// 既にブックマークされている場合は削除
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 			instance.removeItem(items[existingIndex]);
 			result = false;
 		} else {
 			// ブックマークを追加
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file && file instanceof TFile) {
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 				instance.addItem({ type: 'file', path: path, title: '' });
 				result = true;
 			} else {
@@ -1101,6 +1467,183 @@ export class TimelineView extends ItemView {
 		this.cachedBookmarkedPaths = null;
 
 		return result;
+	}
+
+	/**
+	 * スクロールハンドラー（無限スクロール用）
+	 */
+	private handleScroll(): void {
+		if (!this.plugin.data.settings.enableInfiniteScroll) return;
+		if (this.isLoadingMore) return;
+		if (this.displayedCount >= this.filteredCards.length) return;
+
+		const container = this.listContainerEl;
+		const scrollBottom = container.scrollTop + container.clientHeight;
+		const threshold = container.scrollHeight - 200; // 200px手前でロード開始
+
+		if (scrollBottom >= threshold) {
+			void this.loadMoreCards();
+		}
+	}
+
+	/**
+	 * 追加カードをロード（無限スクロール用）
+	 */
+	private async loadMoreCards(): Promise<void> {
+		if (this.isLoadingMore) return;
+		if (this.displayedCount >= this.filteredCards.length) return;
+		if (!this.listEl) return;
+
+		this.isLoadingMore = true;
+
+		const settings = this.plugin.data.settings;
+		const isGridMode = settings.viewMode === 'grid';
+		const batchSize = settings.infiniteScrollBatchSize || 20;
+		const startIndex = this.displayedCount;
+		const endIndex = Math.min(startIndex + batchSize, this.filteredCards.length);
+
+		// 追加カードを描画
+		for (let i = startIndex; i < endIndex; i++) {
+			const card = this.filteredCards[i];
+			if (!card) continue;
+			const cardEl = isGridMode
+				? await this.createGridCardElement(card)
+				: await this.createCardElement(card);
+			this.listEl.appendChild(cardEl);
+			this.cardElements.push(cardEl);
+		}
+
+		this.displayedCount = endIndex;
+		this.isLoadingMore = false;
+
+		// フッターを更新
+		this.updateFooter();
+	}
+
+	/**
+	 * タッチ開始ハンドラー（プルトゥリフレッシュ用）
+	 */
+	private handleTouchStart(e: TouchEvent): void {
+		if (this.listContainerEl.scrollTop === 0) {
+			const touch = e.touches[0];
+			if (touch) {
+				this.pullToRefreshStartY = touch.clientY;
+			}
+		}
+	}
+
+	/**
+	 * タッチ移動ハンドラー（プルトゥリフレッシュ用）
+	 */
+	private handleTouchMove(e: TouchEvent): void {
+		if (this.pullToRefreshStartY === 0) return;
+		if (this.listContainerEl.scrollTop > 0) {
+			this.pullToRefreshStartY = 0;
+			this.hidePullIndicator();
+			return;
+		}
+
+		const touch = e.touches[0];
+		if (!touch) return;
+
+		const pullDistance = touch.clientY - this.pullToRefreshStartY;
+		const threshold = 80;
+
+		if (pullDistance > 0) {
+			// 引っ張り中 - デフォルトのスクロールを防止
+			e.preventDefault();
+
+			// インジケーターを表示・更新
+			this.showPullIndicator(pullDistance, threshold);
+
+			if (pullDistance >= threshold) {
+				this.pullToRefreshTriggered = true;
+			} else {
+				this.pullToRefreshTriggered = false;
+			}
+		}
+	}
+
+	/**
+	 * タッチ終了ハンドラー（プルトゥリフレッシュ用）
+	 */
+	private handleTouchEnd(_e: TouchEvent): void {
+		if (this.pullToRefreshTriggered) {
+			this.pullToRefreshTriggered = false;
+			this.showPullIndicator(0, 80, true);  // ローディング状態を表示
+			void this.refresh().then(() => {
+				this.hidePullIndicator();
+			});
+		} else {
+			this.hidePullIndicator();
+		}
+		this.pullToRefreshStartY = 0;
+	}
+
+	/**
+	 * プルインジケーターを表示
+	 */
+	private showPullIndicator(distance: number, threshold: number, loading: boolean = false): void {
+		if (!this.pullIndicatorEl) {
+			this.pullIndicatorEl = document.createElement('div');
+			this.pullIndicatorEl.className = 'timeline-pull-indicator';
+			this.listContainerEl.insertBefore(this.pullIndicatorEl, this.listContainerEl.firstChild);
+		}
+
+		const progress = Math.min(distance / threshold, 1);
+		const height = Math.min(distance * 0.5, 60);
+
+		this.pullIndicatorEl.style.height = `${height}px`;
+		this.pullIndicatorEl.style.opacity = String(progress);
+
+		this.pullIndicatorEl.empty();
+		if (loading) {
+			this.pullIndicatorEl.createSpan({ cls: 'timeline-pull-spinner' });
+			this.pullIndicatorEl.createSpan({ text: 'Refreshing...' });
+			this.pullIndicatorEl.classList.add('is-loading');
+		} else if (progress >= 1) {
+			this.pullIndicatorEl.createSpan({ text: '↑' });
+			this.pullIndicatorEl.createSpan({ text: 'Release to refresh' });
+			this.pullIndicatorEl.classList.add('is-ready');
+			this.pullIndicatorEl.classList.remove('is-loading');
+		} else {
+			this.pullIndicatorEl.createSpan({ text: '↓' });
+			this.pullIndicatorEl.createSpan({ text: 'Pull to refresh' });
+			this.pullIndicatorEl.classList.remove('is-ready', 'is-loading');
+		}
+	}
+
+	/**
+	 * プルインジケーターを非表示
+	 */
+	private hidePullIndicator(): void {
+		if (this.pullIndicatorEl) {
+			this.pullIndicatorEl.remove();
+			this.pullIndicatorEl = null;
+		}
+	}
+
+	/**
+	 * フッターを更新（無限スクロール用）
+	 */
+	private updateFooter(): void {
+		const footer = this.listContainerEl.querySelector('.timeline-footer');
+		if (!footer) return;
+
+		footer.empty();
+
+		const settings = this.plugin.data.settings;
+		if (settings.enableInfiniteScroll && this.displayedCount < this.filteredCards.length) {
+			const loadingEl = footer.createDiv({ cls: 'timeline-loading-indicator' });
+			loadingEl.createSpan({ cls: 'timeline-loading-spinner' });
+			loadingEl.createSpan({ cls: 'timeline-loading-text', text: 'Scroll for more...' });
+		} else {
+			const bottomRefreshBtn = footer.createEl('button', {
+				cls: 'timeline-refresh-btn',
+				text: '↻',
+			});
+			bottomRefreshBtn.addEventListener('click', () => { void this.refresh(); });
+		}
 	}
 
 	/**
@@ -1128,37 +1671,37 @@ export class TimelineView extends ItemView {
 			case 'Enter':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					this.openFocusedCard();
+					void this.openFocusedCard();
 				}
 				break;
 			case '1':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					this.rateFocusedCard('again');
+					void this.rateFocusedCard('again');
 				}
 				break;
 			case '2':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					this.rateFocusedCard('hard');
+					void this.rateFocusedCard('hard');
 				}
 				break;
 			case '3':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					this.rateFocusedCard('good');
+					void this.rateFocusedCard('good');
 				}
 				break;
 			case '4':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					this.rateFocusedCard('easy');
+					void this.rateFocusedCard('easy');
 				}
 				break;
 			case 'b':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					this.toggleFocusedBookmark();
+					void this.toggleFocusedBookmark();
 				}
 				break;
 			case 'c':
@@ -1175,7 +1718,7 @@ export class TimelineView extends ItemView {
 				break;
 			case 'r':
 				e.preventDefault();
-				this.refresh();
+				void this.refresh();
 				break;
 			case 'Escape':
 				e.preventDefault();
@@ -1292,7 +1835,7 @@ export class TimelineView extends ItemView {
 		if (cardEl) {
 			const bookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
 			if (bookmarkBtn) {
-				bookmarkBtn.innerHTML = nowBookmarked ? '★' : '☆';
+				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			}
 		}

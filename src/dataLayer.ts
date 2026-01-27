@@ -14,6 +14,9 @@ import {
 	getTodayString,
 } from './types';
 
+/** テキスト拡張子 */
+const TEXT_EXTENSIONS = ['txt', 'text', 'log', 'ini', 'cfg', 'conf', 'json', 'xml', 'yaml', 'yml', 'toml', 'csv', 'tsv'];
+
 /** 画像拡張子 */
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'avif'];
 
@@ -25,6 +28,12 @@ const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'wma'];
 
 /** 動画拡張子 */
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv'];
+
+/** Office拡張子 */
+const OFFICE_EXTENSIONS = ['pptx', 'ppt', 'docx', 'doc', 'xlsx', 'xls', 'odt', 'ods', 'odp'];
+
+/** Jupyter Notebook拡張子 */
+const IPYNB_EXTENSIONS = ['ipynb'];
 
 /** キャッシュのTTL（ミリ秒） */
 const CACHE_TTL = 5000;
@@ -78,10 +87,13 @@ export function clearBookmarkCache(): void {
 export function getFileType(extension: string): FileType {
 	const ext = extension.toLowerCase();
 	if (ext === 'md') return 'markdown';
+	if (TEXT_EXTENSIONS.includes(ext)) return 'text';
 	if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
 	if (PDF_EXTENSIONS.includes(ext)) return 'pdf';
 	if (AUDIO_EXTENSIONS.includes(ext)) return 'audio';
 	if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
+	if (OFFICE_EXTENSIONS.includes(ext)) return 'office';
+	if (IPYNB_EXTENSIONS.includes(ext)) return 'ipynb';
 	return 'other';
 }
 
@@ -141,6 +153,7 @@ function extractTags(cache: CachedMetadata | null): string[] {
 
 	// frontmatterのtags
 	if (cache.frontmatter?.tags) {
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 		const fmTags = cache.frontmatter.tags;
 		if (Array.isArray(fmTags)) {
 			tags.push(...fmTags.map(t => String(t)));
@@ -169,6 +182,7 @@ function isPinned(cache: CachedMetadata | null): boolean {
  */
 function getYamlNumber(cache: CachedMetadata | null, key: string): number | null {
 	if (!cache?.frontmatter || !key) return null;
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 	const value = cache.frontmatter[key];
 	if (typeof value === 'number') return value;
 	if (typeof value === 'string') {
@@ -260,11 +274,12 @@ export function extractBacklinks(
 
 	// インデックスがない場合は従来の処理（後方互換性）
 	const backlinks: LinkedNote[] = [];
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 	const resolvedLinks = (app.metadataCache as any).resolvedLinks;
 
 	if (!resolvedLinks) return backlinks;
 
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
 	for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
 		if (sourcePath === file.path) continue;
 
@@ -478,6 +493,21 @@ export async function createTimelineCard(
 	let firstImagePath: string | null = null;
 
 	switch (fileType) {
+		case 'text':
+			// テキストファイルの場合は内容を読み込んでプレビュー
+			try {
+				const textContent = await app.vault.cachedRead(file);
+				const lines = textContent.split('\n');
+				const previewLines = settings.previewMode === 'full'
+					? lines
+					: settings.previewMode === 'half'
+						? lines.slice(0, Math.ceil(lines.length / 2))
+						: lines.slice(0, settings.previewLines);
+				preview = previewLines.join('\n');
+			} catch {
+				preview = `📝 ${file.extension.toUpperCase()} file`;
+			}
+			break;
 		case 'image':
 			preview = `📷 ${file.extension.toUpperCase()} image`;
 			firstImagePath = file.path;  // 画像ファイル自身をサムネイルとして使用
@@ -491,6 +521,12 @@ export async function createTimelineCard(
 			break;
 		case 'video':
 			preview = `🎬 ${file.extension.toUpperCase()} video`;
+			break;
+		case 'office':
+			preview = `📊 ${file.extension.toUpperCase()} file`;
+			break;
+		case 'ipynb':
+			preview = `📓 Jupyter Notebook`;
 			break;
 		default:
 			preview = `📁 ${file.extension.toUpperCase()} file`;
@@ -754,10 +790,13 @@ export function recordReviewToHistory(
 		reviewedCount: 0,
 		fileTypes: {
 			markdown: 0,
+			text: 0,
 			image: 0,
 			pdf: 0,
 			audio: 0,
 			video: 0,
+			office: 0,
+			ipynb: 0,
 			other: 0,
 		},
 	};
@@ -811,10 +850,13 @@ export interface ReviewStatistics {
 	currentStreak: number;
 	fileTypeBreakdown: {
 		markdown: number;
+		text: number;
 		image: number;
 		pdf: number;
 		audio: number;
 		video: number;
+		office: number;
+		ipynb: number;
 		other: number;
 	};
 	heatmapData: { date: string; count: number }[];
@@ -852,10 +894,13 @@ export function calculateStatistics(
 	// ファイルタイプ別統計（30日間）
 	const fileTypeBreakdown = {
 		markdown: 0,
+		text: 0,
 		image: 0,
 		pdf: 0,
 		audio: 0,
 		video: 0,
+		office: 0,
+		ipynb: 0,
 		other: 0,
 	};
 
