@@ -437,7 +437,6 @@ export class TimelineView extends ItemView {
 		textarea.addEventListener('input', () => {
 			// eslint-disable-next-line obsidianmd/no-static-styles-assignment
 			textarea.style.height = 'auto';
-			// eslint-disable-next-line obsidianmd/no-static-styles-assignment
 			textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
 		});
 
