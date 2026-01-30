@@ -264,7 +264,10 @@ export class TimelineView extends ItemView {
 			// 統計のみ更新
 			const statsEl = this.listContainerEl.querySelector('.timeline-stats');
 			if (statsEl && this.plugin.data.settings.selectionMode === 'srs') {
-				statsEl.innerHTML = `<span class="timeline-stat-new">${this.newCount} new</span> · <span class="timeline-stat-due">${this.dueCount} due</span>`;
+				statsEl.empty();
+				statsEl.createSpan({ cls: 'timeline-stat-new', text: `${this.newCount} new` });
+				statsEl.appendText(' · ');
+				statsEl.createSpan({ cls: 'timeline-stat-due', text: `${this.dueCount} due` });
 			}
 			return;
 		}
@@ -789,9 +792,7 @@ export class TimelineView extends ItemView {
 	 * カード要素を作成
 	 */
 	private async createCardElement(card: TimelineCard): Promise<HTMLElement> {
-		const cardEl = document.createElement('div');
-		cardEl.className = 'timeline-card';
-		cardEl.addClass(`timeline-card-type-${card.fileType}`);
+		const cardEl = createDiv({ cls: ['timeline-card', `timeline-card-type-${card.fileType}`] });
 		if (card.pinned) {
 			cardEl.addClass('timeline-card-pinned');
 		}
@@ -1258,9 +1259,7 @@ export class TimelineView extends ItemView {
 	 * グリッドカード要素を作成（画像中心の表示）
 	 */
 	private async createGridCardElement(card: TimelineCard): Promise<HTMLElement> {
-		const cardEl = document.createElement('div');
-		cardEl.className = 'timeline-grid-card';
-		cardEl.addClass(`timeline-card-type-${card.fileType}`);
+		const cardEl = createDiv({ cls: ['timeline-grid-card', `timeline-card-type-${card.fileType}`] });
 		if (card.pinned) {
 			cardEl.addClass('timeline-card-pinned');
 		}
@@ -1790,8 +1789,7 @@ export class TimelineView extends ItemView {
 	 */
 	private showPullIndicator(distance: number, threshold: number, loading: boolean = false): void {
 		if (!this.pullIndicatorEl) {
-			this.pullIndicatorEl = document.createElement('div');
-			this.pullIndicatorEl.className = 'timeline-pull-indicator';
+			this.pullIndicatorEl = createDiv({ cls: 'timeline-pull-indicator' });
 			this.listContainerEl.insertBefore(this.pullIndicatorEl, this.listContainerEl.firstChild);
 		}
 

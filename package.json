@@ -1,6 +1,6 @@
 {
 	"name": "timeline-note-launcher",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "A Twitter-like timeline view for randomly reviewing your notes in Obsidian",
 	"main": "main.js",
 	"type": "module",

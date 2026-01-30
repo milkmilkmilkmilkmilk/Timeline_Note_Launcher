@@ -1,7 +1,7 @@
 {
 	"id": "timeline-note-launcher",
 	"name": "Timeline Note Launcher",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"minAppVersion": "0.15.0",
 	"description": "A Twitter-like timeline view for randomly reviewing your notes. Displays note cards in a vertical list with tap-to-open navigation.",
 	"author": "usumi",
