@@ -31,12 +31,12 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		// デバウンスされた保存関数（500ms遅延）
 		this.debouncedSave = debounce(async () => {
-			await this.plugin.saveData(this.plugin.data);
+			await this.plugin.syncAndSave();
 		}, 500);
 
 		// デバウンスされた保存＋リフレッシュ関数（500ms遅延）
 		this.debouncedSaveAndRefresh = debounce(async () => {
-			await this.plugin.saveData(this.plugin.data);
+			await this.plugin.syncAndSave();
 			this.plugin.refreshAllViews();
 		}, 500);
 	}
@@ -121,7 +121,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.selectionMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.selectionMode = value as SelectionMode;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					// 設定画面を再描画してSRS設定を表示/非表示
 					this.display();
 				}));
@@ -139,7 +139,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.newCardsPerDay = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 
 			new Setting(containerEl)
@@ -151,7 +151,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.reviewCardsPerDay = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 
 			new Setting(containerEl)
@@ -163,7 +163,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.initialInterval = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 
 			new Setting(containerEl)
@@ -175,7 +175,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.easyBonus = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 		}
 
@@ -191,7 +191,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.viewMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.viewMode = value as ViewMode;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.plugin.refreshAllViews();
 					this.display();
 				}));
@@ -207,7 +207,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.gridColumns = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 						this.plugin.refreshAllViews();
 					}));
 		}
@@ -223,7 +223,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.imageSizeMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.imageSizeMode = value as ImageSizeMode;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.plugin.refreshAllViews();
 				}));
 
@@ -237,7 +237,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.previewMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.previewMode = value as PreviewMode;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					// 設定画面を再描画してpreviewLinesを表示/非表示
 					this.display();
 				}));
@@ -253,7 +253,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.previewLines = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 		}
 
@@ -273,7 +273,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.colorTheme)
 				.onChange(async (value) => {
 					this.plugin.data.settings.colorTheme = value as ColorTheme;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.plugin.refreshAllViews();
 				}));
 
@@ -286,7 +286,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.uiTheme)
 				.onChange(async (value) => {
 					this.plugin.data.settings.uiTheme = value as UITheme;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.plugin.refreshAllViews();
 				}));
 
@@ -297,7 +297,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.showMeta)
 				.onChange(async (value) => {
 					this.plugin.data.settings.showMeta = value;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		new Setting(containerEl)
@@ -307,7 +307,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.showDifficultyButtons)
 				.onChange(async (value) => {
 					this.plugin.data.settings.showDifficultyButtons = value;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		// Desktop専用設定
@@ -319,7 +319,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.data.settings.enableSplitView)
 					.onChange(async (value) => {
 						this.plugin.data.settings.enableSplitView = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 
 			new Setting(containerEl)
@@ -329,7 +329,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.data.settings.mobileViewOnDesktop)
 					.onChange(async (value) => {
 						this.plugin.data.settings.mobileViewOnDesktop = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 						// タイムラインビューを更新して連動
 						this.plugin.refreshAllViews();
 					}));
@@ -347,7 +347,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.yamlDifficultyKey)
 				.onChange(async (value) => {
 					this.plugin.data.settings.yamlDifficultyKey = value.trim();
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		new Setting(containerEl)
@@ -359,7 +359,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.yamlPriorityKey)
 				.onChange(async (value) => {
 					this.plugin.data.settings.yamlPriorityKey = value.trim();
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		// === 引用ノート設定 ===
@@ -373,7 +373,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.quoteNoteTemplate)
 				.onChange(async (value) => {
 					this.plugin.data.settings.quoteNoteTemplate = value || DEFAULT_QUOTE_NOTE_TEMPLATE;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		// テンプレートリセットボタン
@@ -384,7 +384,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setButtonText('Reset')
 				.onClick(async () => {
 					this.plugin.data.settings.quoteNoteTemplate = DEFAULT_QUOTE_NOTE_TEMPLATE;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.display();
 				}));
 
@@ -400,7 +400,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.quickNoteFolder)
 				.onChange(async (value) => {
 					this.plugin.data.settings.quickNoteFolder = value.trim();
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		new Setting(containerEl)
@@ -411,7 +411,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.quickNoteTemplate)
 				.onChange(async (value) => {
 					this.plugin.data.settings.quickNoteTemplate = value || DEFAULT_QUICK_NOTE_TEMPLATE;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		new Setting(containerEl)
@@ -421,7 +421,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setButtonText('Reset')
 				.onClick(async () => {
 					this.plugin.data.settings.quickNoteTemplate = DEFAULT_QUICK_NOTE_TEMPLATE;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.display();
 				}));
 
@@ -438,7 +438,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					const num = parseInt(value, 10);
 					if (!isNaN(num) && num >= 1 && num <= 500) {
 						this.plugin.data.settings.maxCards = num;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}
 				}));
 
@@ -449,7 +449,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setValue(this.plugin.data.settings.enableInfiniteScroll)
 				.onChange(async (value) => {
 					this.plugin.data.settings.enableInfiniteScroll = value;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 					this.plugin.refreshAllViews();
 					this.display();
 				}));
@@ -464,7 +464,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.data.settings.infiniteScrollBatchSize = value;
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 					}));
 		}
 
@@ -477,7 +477,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setDynamicTooltip()
 				.onChange(async (value) => {
 					this.plugin.data.settings.autoRefreshMinutes = value;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		new Setting(containerEl)
@@ -489,7 +489,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.setDynamicTooltip()
 				.onChange(async (value) => {
 					this.plugin.data.settings.logRetentionDays = value;
-					await this.plugin.saveData(this.plugin.data);
+					await this.plugin.syncAndSave();
 				}));
 
 		// === 統計 ===
@@ -520,7 +520,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 							reviewedCount: 0,
 						};
 						this.plugin.data.reviewHistory = {};
-						await this.plugin.saveData(this.plugin.data);
+						await this.plugin.syncAndSave();
 						this.display();
 					}
 				}));

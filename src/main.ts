@@ -17,6 +17,7 @@ import {
 	BacklinkIndex,
 } from './dataLayer';
 import { selectCards } from './selectionEngine';
+import { mergePluginData, reconstructFullData } from './dataMerge';
 
 export default class TimelineNoteLauncherPlugin extends Plugin {
 	data: PluginData;
@@ -25,6 +26,8 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	private static readonly BACKLINK_CACHE_TTL = 10_000;
 	// 評価取り消し用スナップショット（セッション限り）
 	private ratingUndoMap: Map<string, RatingUndoSnapshot> = new Map();
+	// 保存キュー（直列化用）
+	private saveQueue: Promise<void> = Promise.resolve();
 
 	async onload(): Promise<void> {
 		// データ読み込み
@@ -61,6 +64,13 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		// 設定タブ
 		this.addSettingTab(new TimelineSettingTab(this.app, this));
 
+		// visibilitychange リスナー（アプリ復帰時にリモート変更を取り込む）
+		this.registerDomEvent(document, 'visibilitychange', () => {
+			if (document.visibilityState === 'visible') {
+				void this.reloadFromDisk();
+			}
+		});
+
 		// 重い処理は layoutReady 後に遅延
 		this.app.workspace.onLayoutReady(() => {
 			// 自動更新の設定
@@ -78,7 +88,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			// 日次統計のリセット確認
 			this.checkDailyStatsReset();
 
-			void this.saveData(this.data);
+			void this.syncAndSave();
 		});
 	}
 
@@ -167,6 +177,9 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * タイムラインカードを取得（2フェーズパイプライン）
 	 */
 	async getTimelineCards(): Promise<{ cards: TimelineCard[]; newCount: number; dueCount: number }> {
+		// リフレッシュ時に最新データを取り込む
+		await this.reloadFromDisk();
+
 		const targetFiles = enumerateTargetNotes(this.app, this.data.settings);
 
 		// Phase 1: 軽量候補生成（ファイルI/Oなし・同期）
@@ -241,7 +254,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			wasNew
 		);
 
-		await this.saveData(this.data);
+		await this.syncAndSave();
 	}
 
 	/**
@@ -281,7 +294,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			wasNew
 		);
 
-		await this.saveData(this.data);
+		await this.syncAndSave();
 	}
 
 	/**
@@ -319,7 +332,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			todayHistory.fileTypes[snapshot.fileType] = Math.max(0, todayHistory.fileTypes[snapshot.fileType] - 1);
 		}
 
-		await this.saveData(this.data);
+		await this.syncAndSave();
 		return true;
 	}
 
@@ -382,7 +395,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		} else {
 			delete this.data.commentDrafts[path];
 		}
-		await this.saveData(this.data);
+		await this.syncAndSave();
 	}
 
 	/**
@@ -390,7 +403,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 */
 	async deleteCommentDraft(path: string): Promise<void> {
 		delete this.data.commentDrafts[path];
-		await this.saveData(this.data);
+		await this.syncAndSave();
 	}
 
 	/**
@@ -417,7 +430,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		} else {
 			delete this.data.quoteNoteDrafts[path];
 		}
-		await this.saveData(this.data);
+		await this.syncAndSave();
 	}
 
 	/**
@@ -425,7 +438,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 */
 	async deleteQuoteNoteDraft(path: string): Promise<void> {
 		delete this.data.quoteNoteDrafts[path];
-		await this.saveData(this.data);
+		await this.syncAndSave();
 	}
 
 	/**
@@ -436,5 +449,40 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		if (!draft) return false;
 		const hasSelectedTexts = draft.selectedTexts?.some(t => t.trim()) ?? false;
 		return !!(hasSelectedTexts || draft.title.trim() || draft.comment.trim());
+	}
+
+	/**
+	 * ディスクから再読み込み→マージ→保存（同期セーフ）
+	 * saveQueue で直列化して競合を防止
+	 */
+	async syncAndSave(): Promise<void> {
+		this.saveQueue = this.saveQueue.then(async () => {
+			try {
+				const diskRaw = await this.loadData() as Partial<PluginData> | null;
+				const remote = reconstructFullData(diskRaw);
+				this.data = mergePluginData(this.data, remote);
+			} catch {
+				// loadData失敗時はローカルをそのまま保存
+			}
+			await this.saveData(this.data);
+		});
+		await this.saveQueue;
+	}
+
+	/**
+	 * ディスクからリロードしてマージ（保存なし・読み取り専用）
+	 * アプリ復帰時やタイムラインリフレッシュ時に使用
+	 */
+	private async reloadFromDisk(): Promise<void> {
+		this.saveQueue = this.saveQueue.then(async () => {
+			try {
+				const diskRaw = await this.loadData() as Partial<PluginData> | null;
+				const remote = reconstructFullData(diskRaw);
+				this.data = mergePluginData(this.data, remote);
+			} catch {
+				// loadData失敗時はローカルをそのまま維持
+			}
+		});
+		await this.saveQueue;
 	}
 }

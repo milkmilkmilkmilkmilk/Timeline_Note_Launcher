@@ -231,6 +231,10 @@
 	width: 100%;
 }
 
+.timeline-mobile .timeline-filter-types {
+	width: 100%;
+}
+
 .timeline-mobile .timeline-search-input {
 	padding: 8px 12px;
 	font-size: 14px;
@@ -2260,6 +2264,7 @@
 	width: 100%;
 	display: block;
 	border: none;
+	background: white;
 }
 
 /* PDF オープンボタン */
@@ -2306,6 +2311,7 @@
 	min-height: 150px;
 	display: block;
 	border: none;
+	background: white;
 }
 
 .timeline-grid-card-pdf-embed .timeline-pdf-open-btn {
@@ -2331,6 +2337,50 @@
 .timeline-mobile .timeline-grid-card-pdf-embed {
 	aspect-ratio: 3/4;
 	min-height: 350px;
+}
+
+/* PDF描画失敗時のフォールバック表示 */
+.timeline-pdf-embed-hidden {
+	display: none;
+}
+
+.timeline-pdf-fallback {
+	display: none;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	height: 100%;
+	min-height: 200px;
+	background: var(--background-secondary);
+	border-radius: 6px;
+	color: var(--text-muted);
+}
+
+.timeline-pdf-fallback-visible {
+	display: flex;
+}
+
+.timeline-pdf-fallback-icon {
+	font-size: 48px;
+	line-height: 1;
+}
+
+.timeline-pdf-fallback-name {
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--text-normal);
+	max-width: 80%;
+	text-align: center;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.timeline-pdf-fallback-hint {
+	font-size: 12px;
+	color: var(--text-faint);
 }
 
 /* ===== UIテーマ: Classic（デフォルト） ===== */
@@ -3055,4 +3105,77 @@
 	border-top-color: var(--interactive-accent);
 	border-radius: 50%;
 	animation: timeline-spin 0.8s linear infinite;
+}
+
+/* ===== Jupyter Notebook スタイル ===== */
+
+/* ipynb プレビュー */
+.timeline-card-preview-ipynb {
+	background: var(--background-primary);
+	border-radius: 6px;
+	padding: 8px;
+}
+
+/* ipynb セル数サマリー（イタリック） */
+.timeline-card-preview-ipynb em {
+	display: block;
+	margin-bottom: 8px;
+	padding: 4px 8px;
+	background: rgba(231, 111, 0, 0.1);
+	border-left: 3px solid #e76f00;
+	border-radius: 0 4px 4px 0;
+	color: var(--text-muted);
+	font-size: 11px;
+}
+
+/* ipynb コードブロック */
+.timeline-card-preview-ipynb pre {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 8px;
+	margin: 8px 0;
+	overflow-x: auto;
+	font-size: 12px;
+}
+
+.timeline-card-preview-ipynb code {
+	font-family: var(--font-monospace);
+	font-size: 12px;
+}
+
+/* ipynb 出力画像サムネイル */
+.timeline-card-thumbnail-ipynb {
+	background: #f8f8f8;
+	border-radius: 6px;
+	padding: 8px;
+}
+
+.timeline-card-thumbnail-ipynb img {
+	border-radius: 4px;
+	background: white;
+}
+
+/* グリッドビュー: ipynb サムネイル */
+.timeline-grid-card-thumbnail-ipynb {
+	background: #f8f8f8;
+}
+
+.timeline-grid-card-thumbnail-ipynb img {
+	background: white;
+}
+
+/* ダークモード対応 */
+.theme-dark .timeline-card-thumbnail-ipynb,
+.theme-dark .timeline-grid-card-thumbnail-ipynb {
+	background: #2d2d2d;
+}
+
+.theme-dark .timeline-card-thumbnail-ipynb img,
+.theme-dark .timeline-grid-card-thumbnail-ipynb img {
+	background: #1e1e1e;
+}
+
+.theme-dark .timeline-card-preview-ipynb em {
+	background: rgba(231, 111, 0, 0.15);
 }
