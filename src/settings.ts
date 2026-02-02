@@ -95,18 +95,6 @@ export class TimelineSettingTab extends PluginSettingTab {
 					this.debouncedSaveAndRefresh();
 				}));
 
-		new Setting(containerEl)
-			.setName('Search query')
-			.setDesc('Additional search filter (Obsidian search syntax)')
-			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
-				.setPlaceholder('path:notes OR tag:#important')
-				.setValue(this.plugin.data.settings.searchQuery)
-				.onChange((value) => {
-					this.plugin.data.settings.searchQuery = value;
-					this.debouncedSaveAndRefresh();
-				}));
-
 		// === 選択モード ===
 		new Setting(containerEl).setName('Selection mode').setHeading();
 
