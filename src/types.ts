@@ -53,7 +53,6 @@ export interface PluginSettings {
 	targetFolders: string[];
 	excludeFolders: string[];
 	targetTags: string[];
-	searchQuery: string;
 
 	// 選択モード
 	selectionMode: SelectionMode;
@@ -243,7 +242,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	targetFolders: [],
 	excludeFolders: [],
 	targetTags: [],
-	searchQuery: '',
 	selectionMode: 'random',
 	viewMode: 'list',
 	gridColumns: 3,
