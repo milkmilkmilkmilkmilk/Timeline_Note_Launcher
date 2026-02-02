@@ -181,6 +181,11 @@ export class TimelineView extends ItemView {
 	async onClose(): Promise<void> {
 		// スクロール位置を保存
 		this.scrollPosition = this.listContainerEl.scrollTop;
+		// 検索デバウンスタイマーを解除
+		if (this.searchDebounceTimer !== null) {
+			window.clearTimeout(this.searchDebounceTimer);
+			this.searchDebounceTimer = null;
+		}
 		// レンダリングコンポーネントをアンロード
 		this.renderComponent.unload();
 		// キーボードリスナーを解除
@@ -650,11 +655,17 @@ export class TimelineView extends ItemView {
 	 * 検索入力ハンドラー（デバウンス付き）
 	 */
 	private handleSearchInput(query: string): void {
+		if (!this.listContainerEl) {
+			return;
+		}
 		if (this.searchDebounceTimer !== null) {
 			window.clearTimeout(this.searchDebounceTimer);
 		}
 
 		this.searchDebounceTimer = window.setTimeout(() => {
+			if (!this.listContainerEl) {
+				return;
+			}
 			this.searchQuery = query;
 			void this.renderCardList();
 		}, 300);
@@ -724,6 +735,9 @@ export class TimelineView extends ItemView {
 	 * カードリストのみを再描画（フィルタ変更時）
 	 */
 	private async renderCardList(): Promise<void> {
+		if (!this.listContainerEl) {
+			return;
+		}
 		// フィルタを適用
 		this.applyFilters();
 
