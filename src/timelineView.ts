@@ -18,6 +18,18 @@ function arraysEqual(a: string[], b: string[]): boolean {
 	return true;
 }
 
+/**
+ * カードの更新検知用キー
+ */
+function buildCardStateKey(card: TimelineCard): string {
+	return [
+		card.path,
+		String(card.lastReviewedAt ?? ''),
+		String(card.reviewCount),
+		String(card.nextReviewAt ?? ''),
+	].join('|');
+}
+
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
 
 export class TimelineView extends ItemView {
@@ -41,6 +53,8 @@ export class TimelineView extends ItemView {
 	private previousActiveLeaf: WorkspaceLeaf | null = null;
 	// 差分レンダリング用：前回のカードパス
 	private lastCardPaths: string[] = [];
+	// 差分レンダリング用：前回のカード状態キー
+	private lastCardStateKeys: string[] = [];
 	// ブックマークパスのキャッシュ
 	private cachedBookmarkedPaths: Set<string> | null = null;
 	// タグキャッシュ（refresh()時に更新）
@@ -175,6 +189,7 @@ export class TimelineView extends ItemView {
 		this.updateMobileClass();
 		// 強制的に再描画するためにキャッシュをクリア
 		this.lastCardPaths = [];
+		this.lastCardStateKeys = [];
 		await this.render();
 	}
 
@@ -257,10 +272,12 @@ export class TimelineView extends ItemView {
 	private async render(): Promise<void> {
 		// カードパスの変更を検出
 		const newPaths = this.cards.map(c => c.path);
+		const newStateKeys = this.cards.map(card => buildCardStateKey(card));
 		const pathsChanged = !arraysEqual(this.lastCardPaths, newPaths);
+		const stateChanged = !arraysEqual(this.lastCardStateKeys, newStateKeys);
 
-		// パスが変わっていない場合は完全再構築をスキップ（ヘッダーの統計のみ更新）
-		if (!pathsChanged && this.listContainerEl.hasChildNodes()) {
+		// パスやカード内容が変わっていない場合は完全再構築をスキップ（ヘッダーの統計のみ更新）
+		if (!pathsChanged && !stateChanged && this.listContainerEl.hasChildNodes()) {
 			// 統計のみ更新
 			const statsEl = this.listContainerEl.querySelector('.timeline-stats');
 			if (statsEl && this.plugin.data.settings.selectionMode === 'srs') {
@@ -274,6 +291,7 @@ export class TimelineView extends ItemView {
 
 		// パスを記録
 		this.lastCardPaths = newPaths;
+		this.lastCardStateKeys = newStateKeys;
 
 		// 古いレンダリングをクリーンアップ
 		this.renderComponent.unload();
@@ -409,6 +427,7 @@ export class TimelineView extends ItemView {
 		await this.plugin.syncAndSave();
 		// 強制的に再描画するためにキャッシュをクリア
 		this.lastCardPaths = [];
+		this.lastCardStateKeys = [];
 		await this.render();
 	}
 
