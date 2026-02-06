@@ -99,7 +99,7 @@ A Twitter-like timeline view for randomly reviewing your notes in Obsidian. Disp
 
 ## Known Limitations
 
-- PDF preview is not available on mobile
+- PDF preview is not available on mobile (the timeline shows a fallback card with an Open button)
 - Large vaults may experience slower initial load times
 
 ## License

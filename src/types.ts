@@ -1,98 +1,102 @@
 // Timeline Note Launcher - Type Definitions
 
-/** 選択モード */
+/** 選択モーチE*/
 export type SelectionMode = 'random' | 'age-priority' | 'srs';
 
-/** プレビュー表示モード */
+/** SRSレビュー表示の子要檁E*/
+export type SrsReviewUnlockMode = 'daily-quota' | 'new-zero';
+
+/** プレビュー表示モーチE*/
 export type PreviewMode = 'lines' | 'half' | 'full';
 
-/** 表示モード */
+/** 表示モーチE*/
 export type ViewMode = 'list' | 'grid';
 
-/** カラーテーマ */
+/** カラーチE�EチE*/
 export type ColorTheme = 'default' | 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'red' | 'cyan' | 'yellow';
 
-/** UIテーマ */
+/** UIチE�EチE*/
 export type UITheme = 'classic' | 'twitter';
 
 /** 難易度評価 */
 export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
 
-/** 画像サイズモード */
+/** 画像サイズモーチE*/
 export type ImageSizeMode = 'small' | 'medium' | 'large' | 'full';
 
-/** ファイルタイプ */
+/** ファイルタイチE*/
 export type FileType = 'markdown' | 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'office' | 'ipynb' | 'other';
 
-/** ノートごとのレビューログ（data.json に保存） */
+/** ノ�Eトごとのレビューログ�E�Eata.json に保存！E*/
 export interface NoteReviewLog {
 	lastReviewedAt: number | null;  // Unix timestamp
 	reviewCount: number;
-	// SRS用フィールド
-	nextReviewAt: number | null;    // 次回レビュー予定日（Unix timestamp）
-	difficulty: number;              // 難易度係数（1.3〜2.5、デフォルト2.5）
-	interval: number;                // 現在の間隔（日数）
-	easeFactor: number;              // 易しさ係数（SM-2アルゴリズム用）
+	// SRS用フィールチE
+	nextReviewAt: number | null;    // 次回レビュー予定日�E�Enix timestamp�E�E
+	difficulty: number;              // 難易度係数�E�E.3、E.5、デフォルチE.5�E�E
+	interval: number;                // 現在の間隔�E�日数�E�E
+	easeFactor: number;              // 易しさ係数�E�EM-2アルゴリズム用�E�E
 }
 
-/** 評価取り消し用のスナップショット（セッション限り、永続化しない） */
+/** 評価取り消し用のスナップショチE���E�セチE��ョン限り、永続化しなぁE��E*/
 export interface RatingUndoSnapshot {
-	previousLog: NoteReviewLog | undefined;  // 評価前のログ（undefined=未レビュー）
+	previousLog: NoteReviewLog | undefined;  // 評価前�Eログ�E�Endefined=未レビュー�E�E
 	wasNew: boolean;                          // 新規カードだったか
-	fileType: FileType;                       // ファイルタイプ（履歴デクリメント用）
+	fileType: FileType;                       // ファイルタイプ（履歴チE��リメント用�E�E
 }
 
-/** 全ノートのレビューログ */
+/** 全ノ�Eト�Eレビューログ */
 export interface ReviewLogs {
 	[notePath: string]: NoteReviewLog;
 }
 
-/** プラグイン設定 */
+/** プラグイン設宁E*/
 export interface PluginSettings {
-	// 対象ノート
+	// 対象ノ�EチE
 	targetFolders: string[];
 	excludeFolders: string[];
 	targetTags: string[];
 
-	// 選択モード
+	// 選択モーチE
 	selectionMode: SelectionMode;
 
-	// 表示設定
-	viewMode: ViewMode;        // リスト or グリッド
-	gridColumns: number;       // グリッドの列数（2-4）
+	// 表示設宁E
+	viewMode: ViewMode;        // リスチEor グリチE��
+	gridColumns: number;       // グリチE��の列数�E�E-4�E�E
 	previewMode: PreviewMode;  // 'lines' | 'half' | 'full'
-	previewLines: number;      // previewMode が 'lines' の時のみ使用
-	colorTheme: ColorTheme;    // カラーテーマ
-	uiTheme: UITheme;          // UIテーマ
+	previewLines: number;      // previewMode ぁE'lines' の時�Eみ使用
+	colorTheme: ColorTheme;    // カラーチE�EチE
+	uiTheme: UITheme;          // UIチE�EチE
 	showMeta: boolean;
 	enableSplitView: boolean;  // Desktop only
 	showDifficultyButtons: boolean;  // 難易度ボタンを表示
 	mobileViewOnDesktop: boolean;  // PCでモバイル表示を使用
-	imageSizeMode: ImageSizeMode;  // 画像サイズモード
+	imageSizeMode: ImageSizeMode;  // 画像サイズモーチE
 
-	// 動作設定
+	// 動作設宁E
 	maxCards: number;            // タイムラインに表示する最大カード数
 	autoRefreshMinutes: number;  // 0 = 手動のみ
 	logRetentionDays: number;
-	enableInfiniteScroll: boolean;     // 無限スクロールを有効化
+	enableInfiniteScroll: boolean;     // 無限スクロールを有効匁E
 	infiniteScrollBatchSize: number;   // 一度にロードするカード数
 
-	// SRS設定
-	newCardsPerDay: number;          // 1日あたりの新規カード数
-	reviewCardsPerDay: number;       // 1日あたりのレビューカード数
-	initialInterval: number;         // 初回正解時の間隔（日）
-	easyBonus: number;               // Easyボーナス係数
+	// SRS設宁E
+	newCardsPerDay: number;          // 1日あたり�E新規カード数
+	reviewCardsPerDay: number;       // 1日あたり�Eレビューカード数
+	srsReviewUnlockMode: SrsReviewUnlockMode;  // レビューカードを表示する子要檁E
+	initialInterval: number;         // 初回正解時�E間隔�E�日�E�E
+	easyBonus: number;               // Easyボ�Eナス係数
 
-	// YAML連携設定
-	yamlDifficultyKey: string;       // 難易度を読み取るYAMLキー（空なら無視）
-	yamlPriorityKey: string;         // 優先度を読み取るYAMLキー（空なら無視）
+	// YAML連携設宁E
+	yamlDifficultyKey: string;       // 難易度を読み取るYAMLキー�E�空なら無視！E
+	yamlPriorityKey: string;         // 優先度を読み取るYAMLキー�E�空なら無視！E
 
-	// 引用ノート設定
-	quoteNoteTemplate: string;    // 引用ノート用テンプレート
+	// 引用ノ�Eト設宁E
+	quoteNoteTemplate: string;    // 引用ノ�Eト用チE��プレーチE
 
-	// クイックノート設定
-	quickNoteFolder: string;      // クイックノートの保存先フォルダ
-	quickNoteTemplate: string;    // クイックノート用テンプレート
+	// クイチE��ノ�Eト設宁E
+	quickNoteFolder: string;      // クイチE��ノ�Eト�E保存�Eフォルダ
+	quickNoteTemplate: string;    // クイチE��ノ�Eト用チE��プレーチE
 }
 
 /** コメントドラフト */
@@ -100,14 +104,14 @@ export interface CommentDrafts {
 	[notePath: string]: string;
 }
 
-/** 引用ノートドラフト */
+/** 引用ノ�Eトドラフト */
 export interface QuoteNoteDraft {
-	selectedTexts: string[];  // 複数の引用テキスト
+	selectedTexts: string[];  // 褁E��の引用チE��スチE
 	title: string;
 	comment: string;
 }
 
-/** 引用ノートドラフト一覧 */
+/** 引用ノ�Eトドラフト一覧 */
 export interface QuoteNoteDrafts {
 	[sourcePath: string]: QuoteNoteDraft;
 }
@@ -136,21 +140,21 @@ export interface PluginData {
 	settings: PluginSettings;
 	reviewLogs: ReviewLogs;
 	engineVersion: number;
-	// 日次統計
+	// 日次統訁E
 	dailyStats: {
 		date: string;  // YYYY-MM-DD
 		newReviewed: number;
 		reviewedCount: number;
 	};
-	// 日次レビュー履歴（過去30日分）
+	// 日次レビュー履歴�E�過去30日刁E��E
 	reviewHistory: DailyReviewHistory;
 	// コメントドラフト
 	commentDrafts: CommentDrafts;
-	// 引用ノートドラフト
+	// 引用ノ�Eトドラフト
 	quoteNoteDrafts: QuoteNoteDrafts;
 }
 
-/** リンク情報 */
+/** リンク惁E�� */
 export interface LinkedNote {
 	path: string;
 	title: string;
@@ -161,11 +165,11 @@ export interface TimelineCard {
 	path: string;
 	title: string;
 	preview: string;
-	fileType: FileType;             // ファイルタイプ
-	extension: string;              // 拡張子
-	firstImagePath: string | null;  // 最初の画像のパス（画像ファイルの場合は自身）
-	outgoingLinks: LinkedNote[];    // このノートからのリンク
-	backlinks: LinkedNote[];        // このノートへのリンク
+	fileType: FileType;             // ファイルタイチE
+	extension: string;              // 拡張孁E
+	firstImagePath: string | null;  // 最初�E画像�Eパス�E�画像ファイルの場合�E自身�E�E
+	outgoingLinks: LinkedNote[];    // こ�Eノ�Eトから�Eリンク
+	backlinks: LinkedNote[];        // こ�Eノ�Eトへのリンク
 	lastReviewedAt: number | null;
 	reviewCount: number;
 	pinned: boolean;
@@ -174,14 +178,14 @@ export interface TimelineCard {
 	nextReviewAt: number | null;
 	difficulty: number;
 	interval: number;
-	isNew: boolean;           // 未レビューのカード
+	isNew: boolean;           // 未レビューのカーチE
 	isDue: boolean;           // レビュー期限到来
 	// YAML連携
 	yamlDifficulty: number | null;
 	yamlPriority: number | null;
 }
 
-/** 選択フェーズ用の軽量カード（ファイルI/Oなし） */
+/** 選択フェーズ用の軽量カード（ファイルI/Oなし！E*/
 export interface CandidateCard {
 	path: string;
 	fileType: FileType;
@@ -195,7 +199,7 @@ export interface CandidateCard {
 	yamlPriority: number | null;
 }
 
-/** デフォルトのレビューログ */
+/** チE��ォルト�Eレビューログ */
 export const DEFAULT_REVIEW_LOG: NoteReviewLog = {
 	lastReviewedAt: null,
 	reviewCount: 0,
@@ -205,7 +209,7 @@ export const DEFAULT_REVIEW_LOG: NoteReviewLog = {
 	easeFactor: 2.5,
 };
 
-/** デフォルトクイックノートテンプレート */
+/** チE��ォルトクイチE��ノ�EトテンプレーチE*/
 export const DEFAULT_QUICK_NOTE_TEMPLATE = `---
 uid: {{uid}}
 title: {{title}}
@@ -219,7 +223,7 @@ updated: {{date}}
 {{content}}
 `;
 
-/** デフォルト引用ノートテンプレート */
+/** チE��ォルト引用ノ�EトテンプレーチE*/
 export const DEFAULT_QUOTE_NOTE_TEMPLATE = `---
 uid: {{uid}}
 title: {{title}}
@@ -237,27 +241,27 @@ reference: [[{{originalNote}}]]
 {{comment}}
 `;
 
-/** ブックマークアイテム（Obsidian 内部 API） */
+/** ブックマ�EクアイチE���E�Ebsidian 冁E�� API�E�E*/
 export interface BookmarkItem {
 	type: string;
 	path?: string;
 	title?: string;
 }
 
-/** ブックマークプラグインインスタンス（Obsidian 内部 API） */
+/** ブックマ�Eクプラグインインスタンス�E�Ebsidian 冁E�� API�E�E*/
 export interface BookmarkPluginInstance {
 	items: BookmarkItem[];
 	addItem(item: BookmarkItem): void;
 	removeItem(item: BookmarkItem): void;
 }
 
-/** ブックマーク内部プラグイン（Obsidian 内部 API） */
+/** ブックマ�Eク冁E��プラグイン�E�Ebsidian 冁E�� API�E�E*/
 export interface BookmarkInternalPlugin {
 	enabled: boolean;
 	instance: BookmarkPluginInstance | null;
 }
 
-/** デフォルト設定 */
+/** チE��ォルト設宁E*/
 export const DEFAULT_SETTINGS: PluginSettings = {
 	targetFolders: [],
 	excludeFolders: [],
@@ -279,22 +283,23 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	logRetentionDays: 90,
 	enableInfiniteScroll: false,
 	infiniteScrollBatchSize: 20,
-	// SRS設定
+	// SRS設宁E
 	newCardsPerDay: 20,
 	reviewCardsPerDay: 100,
+	srsReviewUnlockMode: 'daily-quota',
 	initialInterval: 1,
 	easyBonus: 1.3,
 	// YAML連携
 	yamlDifficultyKey: '',
 	yamlPriorityKey: '',
-	// 引用ノート
+	// 引用ノ�EチE
 	quoteNoteTemplate: DEFAULT_QUOTE_NOTE_TEMPLATE,
-	// クイックノート
+	// クイチE��ノ�EチE
 	quickNoteFolder: '',
 	quickNoteTemplate: DEFAULT_QUICK_NOTE_TEMPLATE,
 };
 
-/** デフォルトデータ */
+/** チE��ォルトデータ */
 export const DEFAULT_DATA: PluginData = {
 	settings: DEFAULT_SETTINGS,
 	reviewLogs: {},
@@ -309,8 +314,12 @@ export const DEFAULT_DATA: PluginData = {
 	quoteNoteDrafts: {},
 };
 
-/** 今日の日付文字列を取得 */
+/** 今日の日付文字�Eを取征E*/
 export function getTodayString(): string {
 	const now = new Date();
 	return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
+
+
+
+

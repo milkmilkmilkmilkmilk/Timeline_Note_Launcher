@@ -1038,26 +1038,8 @@ export class TimelineView extends ItemView {
 		// サムネイル画像 / PDF埋め込み
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
-				// PDF埋め込み表示
-				const pdfFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
-				if (pdfFile && pdfFile instanceof TFile) {
-					const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
-					const resourcePath = this.app.vault.getResourcePath(pdfFile);
-					const embedEl = thumbnailEl.createEl('embed', {
-						attr: {
-							src: resourcePath,
-							type: 'application/pdf',
-						},
-					});
-					// embed描画失敗時のフォールバック表示
-					this.addPdfFallback(thumbnailEl, embedEl, card);
-					// PDFクリック時のイベント伝播を停止
-					thumbnailEl.addEventListener('click', (e) => {
-						e.stopPropagation();
-					});
-					// オープンボタンを追加
-					this.createPdfOpenButton(thumbnailEl, card);
-				}
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
+				await this.renderPdfCardPreview(thumbnailEl, card, false);
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-thumbnail-ipynb' });
@@ -1297,26 +1279,8 @@ export class TimelineView extends ItemView {
 		const thumbnailEl = cardEl.createDiv({ cls: 'timeline-grid-card-thumbnail' });
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
-				// PDF埋め込み表示
 				thumbnailEl.addClass('timeline-grid-card-pdf-embed');
-				const pdfFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
-				if (pdfFile && pdfFile instanceof TFile) {
-					const resourcePath = this.app.vault.getResourcePath(pdfFile);
-					const embedEl = thumbnailEl.createEl('embed', {
-						attr: {
-							src: resourcePath,
-							type: 'application/pdf',
-						},
-					});
-					// embed描画失敗時のフォールバック表示
-					this.addPdfFallback(thumbnailEl, embedEl, card);
-					// PDFクリック時のイベント伝播を停止
-					thumbnailEl.addEventListener('click', (e) => {
-						e.stopPropagation();
-					});
-					// オープンボタンを追加
-					this.createPdfOpenButton(thumbnailEl, card);
-				}
+				await this.renderPdfCardPreview(thumbnailEl, card, true);
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				thumbnailEl.addClass('timeline-grid-card-thumbnail-ipynb');
@@ -1423,7 +1387,7 @@ export class TimelineView extends ItemView {
 	private createPdfOpenButton(container: HTMLElement, card: TimelineCard): void {
 		const openBtn = container.createEl('button', {
 			cls: 'timeline-pdf-open-btn',
-			text: '📄 open',
+			text: '📄 Open',
 		});
 		openBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -1432,46 +1396,201 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * PDF embedの描画失敗を検知してフォールバック表示に切り替える
+	 * PDFカードプレビューを描画（Desktop: 埋め込み、Mobile: フォールバック）
 	 */
-	private addPdfFallback(container: HTMLElement, embedEl: HTMLEmbedElement, card: TimelineCard): void {
-		// フォールバック要素を事前に作成（非表示）
-		const fallbackEl = container.createDiv({ cls: 'timeline-pdf-fallback' });
+	private async renderPdfCardPreview(
+		container: HTMLElement,
+		card: TimelineCard,
+		isGridMode: boolean
+	): Promise<void> {
+		container.removeClass('timeline-pdf-has-fallback');
+		container.addEventListener('click', (e) => {
+			e.stopPropagation();
+		});
+
+		const pdfPath = card.firstImagePath;
+		if (!pdfPath) {
+			this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
+			return;
+		}
+
+		const pdfFile = this.app.vault.getAbstractFileByPath(pdfPath);
+		if (!(pdfFile instanceof TFile)) {
+			this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
+			return;
+		}
+
+		if (Platform.isMobile) {
+			this.renderPdfFallback(container, card, 'PDF preview is unavailable on mobile. Tap Open.', isGridMode);
+			return;
+		}
+
+		const embedHost = container.createDiv({ cls: 'timeline-pdf-embed-host' });
+		try {
+			await MarkdownRenderer.render(
+				this.app,
+				`![[${pdfFile.path}]]`,
+				embedHost,
+				card.path,
+				this.renderComponent
+			);
+		} catch (error: unknown) {
+			console.error('Failed to render PDF preview:', error);
+			this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
+			return;
+		}
+
+		this.applyInitialPdfZoom(embedHost);
+
+		const renderedOk = await this.ensurePdfRendered(embedHost);
+		if (!renderedOk) {
+			this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
+			return;
+		}
+
+		this.createPdfOpenButton(container, card);
+
+		const checkTimeout = window.setTimeout(() => {
+			if (!container.isConnected) return;
+			this.applyInitialPdfZoom(embedHost);
+			const currentPdfEl = this.findRenderedPdfElement(embedHost);
+			if (!currentPdfEl || !this.hasVisibleSize(currentPdfEl)) {
+				this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
+			}
+		}, 1500);
+		this.register(() => { window.clearTimeout(checkTimeout); });
+	}
+
+	/**
+	 * 埋め込みPDF要素の描画可否を確認
+	 */
+	private async ensurePdfRendered(embedHost: HTMLElement): Promise<boolean> {
+		await this.waitForAnimationFrame();
+		await this.waitForAnimationFrame();
+
+		const pdfEl = this.findRenderedPdfElement(embedHost);
+		return !!pdfEl && this.hasVisibleSize(pdfEl);
+	}
+
+	/**
+	 * 埋め込みPDF要素を検出
+	 */
+	private findRenderedPdfElement(container: HTMLElement): HTMLElement | null {
+		const selectors = [
+			'.internal-embed.pdf-embed',
+			'.pdf-embed',
+			'.internal-embed',
+			'embed[type="application/pdf"]',
+			'object[type="application/pdf"]',
+			'iframe',
+		];
+		for (const selector of selectors) {
+			const matched = container.querySelector(selector);
+			if (matched instanceof HTMLElement) {
+				return matched;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * 要素が可視サイズを持っているか判定
+	 */
+	private hasVisibleSize(element: HTMLElement): boolean {
+		const rect = element.getBoundingClientRect();
+		return rect.width > 0 && rect.height > 0;
+	}
+
+	/**
+	 * PDFの初期ズームを100%に固定
+	 */
+	private applyInitialPdfZoom(container: HTMLElement): void {
+		const zoomSelectors = [
+			'embed[type="application/pdf"][src]',
+			'object[type="application/pdf"][data]',
+			'iframe[src]',
+		];
+
+		for (const selector of zoomSelectors) {
+			for (const target of container.querySelectorAll(selector)) {
+				if (target instanceof HTMLEmbedElement || target instanceof HTMLIFrameElement) {
+					const currentSrc = target.getAttribute('src');
+					if (!currentSrc) continue;
+					const zoomedSrc = this.withPdfZoom100(currentSrc);
+					if (zoomedSrc !== currentSrc) {
+						target.setAttribute('src', zoomedSrc);
+					}
+					continue;
+				}
+
+				if (target instanceof HTMLObjectElement) {
+					const currentData = target.getAttribute('data');
+					if (!currentData) continue;
+					const zoomedData = this.withPdfZoom100(currentData);
+					if (zoomedData !== currentData) {
+						target.setAttribute('data', zoomedData);
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * URLフラグメントに zoom=100 を適用
+	 */
+	private withPdfZoom100(url: string): string {
+		const [base, hash = ''] = url.split('#', 2);
+		const tokens = hash
+			.replace(/^\?/, '')
+			.split('&')
+			.map(token => token.trim())
+			.filter(token => token.length > 0);
+
+		let hasZoom = false;
+		const nextTokens = tokens.map((token) => {
+			if (token.startsWith('zoom=')) {
+				hasZoom = true;
+				return 'zoom=100';
+			}
+			return token;
+		});
+
+		if (!hasZoom) {
+			nextTokens.unshift('zoom=100');
+		}
+
+		return `${base}#${nextTokens.join('&')}`;
+	}
+
+	/**
+	 * PDFプレビューのフォールバックを描画
+	 */
+	private renderPdfFallback(
+		container: HTMLElement,
+		card: TimelineCard,
+		message: string,
+		isGridMode: boolean
+	): void {
+		container.addClass('timeline-pdf-has-fallback');
+		container.empty();
+
+		const fallbackEl = container.createDiv({ cls: 'timeline-pdf-fallback timeline-pdf-fallback-visible' });
+		fallbackEl.addClass(isGridMode ? 'timeline-pdf-fallback-grid' : 'timeline-pdf-fallback-list');
 		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-icon', text: '📄' });
 		const fileName = card.firstImagePath?.split('/').pop() ?? 'PDF';
 		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-name', text: fileName });
-		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-hint', text: 'Click "open" to view this PDF' });
+		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-hint', text: message });
 
-		// embed要素のロード失敗を検知
-		// <embed>はonerrorが発火しないことがあるため、複数の方法で検知する
-		let fallbackShown = false;
+		this.createPdfOpenButton(container, card);
+	}
 
-		const showFallback = (): void => {
-			if (fallbackShown) return;
-			fallbackShown = true;
-			embedEl.addClass('timeline-pdf-embed-hidden');
-			fallbackEl.addClass('timeline-pdf-fallback-visible');
-		};
-
-		// 方法1: onerrorイベント（一部ケースで発火する）
-		embedEl.addEventListener('error', showFallback);
-
-		// 方法2: 一定時間後にembed要素の描画状態を確認
-		// PDFiumが描画に失敗すると、embed要素のcontentDocumentがnullまたは
-		// clientHeightが0のままになる
-		const checkTimeout = window.setTimeout(() => {
-			// embedが DOM から削除済みなら何もしない
-			if (!embedEl.isConnected) return;
-			// embed の内部コンテンツの高さが 0 なら描画されていないと判断
-			// getSVGDocument() は embed でも使えるが、PDF では null を返す
-			// clientHeight が期待値を持たない場合をフォールバック対象とする
-			if (embedEl.clientHeight === 0) {
-				showFallback();
-			}
-		}, 3000);
-
-		// ビューの破棄時にタイマーをクリア
-		this.register(() => { window.clearTimeout(checkTimeout); });
+	/**
+	 * 次フレームまで待機
+	 */
+	private waitForAnimationFrame(): Promise<void> {
+		return new Promise((resolve) => {
+			window.requestAnimationFrame(() => resolve());
+		});
 	}
 
 	/**

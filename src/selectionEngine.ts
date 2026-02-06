@@ -9,9 +9,7 @@ export interface SelectionResult {
 
 /**
  * 選択エンジン
- * 入力：候補カード＋設定
- * 出力：選択されたパス配列＋統計
- */
+ * 入力：候補カード＋設宁E * 出力：選択されたパス配�E�E�統訁E */
 export function selectCards(
 	cards: CandidateCard[],
 	mode: SelectionMode,
@@ -21,8 +19,7 @@ export function selectCards(
 ): SelectionResult {
 	const maxCards = settings.maxCards || 50;
 
-	// 単一パスで統計を集計
-	let newCount = 0;
+	// 単一パスで統計を雁E��E	let newCount = 0;
 	let dueCount = 0;
 	for (const c of cards) {
 		if (c.isNew) newCount++;
@@ -72,24 +69,22 @@ function selectRandom(cards: CandidateCard[]): CandidateCard[] {
 
 /**
  * モードB: 古さ優先ランダム
- * lastReviewedAt が古いほど重み↑、pinned に加点
+ * lastReviewedAt が古ぁE��ど重み↑、pinned に加点
  */
 function selectAgePriority(cards: CandidateCard[]): CandidateCard[] {
 	const now = Date.now();
 
-	// 重み付きカード配列を作成
+	// 重み付きカード�E列を作�E
 	const weighted = cards.map(card => ({
 		card,
 		weight: calculateAgeWeight(card, now),
 	}));
 
-	// 重み付きランダム選択
-	return weightedShuffle(weighted).map(w => w.card);
+	// 重み付きランダム選抁E	return weightedShuffle(weighted).map(w => w.card);
 }
 
 /**
- * モードC: SRS（間隔反復）
- */
+ * モードC: SRS�E�間隔反復�E�E */
 function selectSRS(
 	cards: CandidateCard[],
 	settings: PluginSettings,
@@ -98,7 +93,7 @@ function selectSRS(
 	newCount: number,
 	dueCount: number
 ): SelectionResult {
-	// 単一パスで分類
+	// 単一パスで刁E��E
 	const dueCards: CandidateCard[] = [];
 	const newCards: CandidateCard[] = [];
 	const futureCards: CandidateCard[] = [];
@@ -108,21 +103,20 @@ function selectSRS(
 		else futureCards.push(c);
 	}
 
-	// 残りの日次制限を計算
+	// 残りの日次制限を計箁E
 	const remainingNew = Math.max(0, settings.newCardsPerDay - dailyNewReviewed);
 	const remainingReview = Math.max(0, settings.reviewCardsPerDay - dailyReviewedCount);
 
-	// 優先順位で並べ替え
-	// 1. 期限到来カード（期限が古い順）
+	// 1. 期限到来カード（期限が古ぁE��E��E
 	const sortedDue = [...dueCards].sort((a, b) => {
 		const aNext = a.nextReviewAt ?? 0;
 		const bNext = b.nextReviewAt ?? 0;
 		return aNext - bNext;
 	});
 
-	// 2. 新規カード（YAML priority考慮、ランダム）
+	// 2. 新規カード！EAML priority老E�E、ランダム�E�E
 	const sortedNew = [...newCards].sort((a, b) => {
-		// YAMLの優先度が高いものを先に
+		// YAMLの優先度が高いも�Eを�Eに
 		const aPriority = a.yamlPriority ?? 0;
 		const bPriority = b.yamlPriority ?? 0;
 		if (aPriority !== bPriority) return bPriority - aPriority;
@@ -130,30 +124,40 @@ function selectSRS(
 		return Math.random() - 0.5;
 	});
 
-	// 3. 将来のカード（次回レビュー日が近い順）
+	// 3. 封E��のカード（次回レビュー日が近い頁E��E
 	const sortedFuture = [...futureCards].sort((a, b) => {
 		const aNext = a.nextReviewAt ?? Infinity;
 		const bNext = b.nextReviewAt ?? Infinity;
 		return aNext - bNext;
 	});
 
-	// 制限を適用してマージ
-	const selectedDue = sortedDue.slice(0, remainingReview);
-	const selectedNew = sortedNew.slice(0, remainingNew);
-
-	// 結果をマージ（期限到来 → 新規 → 将来）
 	const maxCards = settings.maxCards || 50;
-	const combined: CandidateCard[] = [
-		...selectedDue,
-		...selectedNew,
-	];
+	const selectedNew = sortedNew.slice(0, Math.min(remainingNew, maxCards));
 
-	// 残り枠で将来のカードを追加
-	const remainingSlots = Math.max(0, maxCards - combined.length);
+	const unlockMode = settings.srsReviewUnlockMode ?? 'daily-quota';
+	const allowReview = unlockMode === 'new-zero'
+		? sortedNew.length === 0
+		: remainingNew === 0 || sortedNew.length <= remainingNew;
+
+	const selectedDue: CandidateCard[] = [];
+	const selectedFuture: CandidateCard[] = [];
+
+	if (allowReview && remainingReview > 0 && selectedNew.length < maxCards) {
+		const reviewCapacity = Math.min(remainingReview, maxCards - selectedNew.length);
+		const dueSlice = sortedDue.slice(0, reviewCapacity);
+		selectedDue.push(...dueSlice);
+
+		const remainingForFuture = reviewCapacity - selectedDue.length;
+		if (remainingForFuture > 0) {
+			selectedFuture.push(...sortedFuture.slice(0, remainingForFuture));
+		}
+	}
+
 	const result = [
-		...combined,
-		...sortedFuture.slice(0, remainingSlots),
-	].slice(0, maxCards);
+		...selectedNew,
+		...selectedDue,
+		...selectedFuture,
+	];
 
 	return {
 		selectedPaths: result.map(c => c.path),
@@ -162,25 +166,21 @@ function selectSRS(
 }
 
 /**
- * 古さ重みを計算
- */
+ * 古さ重みを計箁E */
 function calculateAgeWeight(card: CandidateCard, now: number): number {
 	let weight = 1;
 
-	// 古さによる重み（未レビューは最大重み）
-	if (card.lastReviewedAt === null) {
-		weight += 100;  // 未レビューは高優先
-	} else {
+	// 古さによる重み�E�未レビューは最大重み�E�E	if (card.lastReviewedAt === null) {
+		weight += 100;  // 未レビューは高優允E	} else {
 		const daysSinceReview = (now - card.lastReviewedAt) / (1000 * 60 * 60 * 24);
-		weight += Math.min(daysSinceReview, 100);  // 最大100日分
-	}
+		weight += Math.min(daysSinceReview, 100);  // 最大100日刁E	}
 
 	// pinned加点
 	if (card.pinned) {
 		weight += 20;
 	}
 
-	// レビュー回数が少ないほど加点
+	// レビュー回数が少なぁE��ど加点
 	const reviewBonus = Math.max(0, 10 - card.reviewCount);
 	weight += reviewBonus;
 
@@ -193,13 +193,10 @@ function calculateAgeWeight(card: CandidateCard, now: number): number {
 }
 
 /**
- * 重み付きシャッフル（O(n log n)）
- * Exponential sortingアルゴリズム: 各アイテムに random^(1/weight) でソートキーを割り当て、
- * ソートすることで重み付きランダム選択を実現
+ * 重み付きシャチE��ル�E�E(n log n)�E�E * Exponential sortingアルゴリズム: 吁E��イチE��に random^(1/weight) でソートキーを割り当て、E * ソートすることで重み付きランダム選択を実現
  */
 function weightedShuffle<T>(items: { card: T; weight: number }[]): { card: T; weight: number }[] {
-	// 各アイテムにソートキーを付与してソート
-	return items
+	// 吁E��イチE��にソートキーを付与してソーチE	return items
 		.map(item => ({
 			item,
 			// 重みが大きいほど、この値が大きくなりやすい
@@ -208,3 +205,5 @@ function weightedShuffle<T>(items: { card: T; weight: number }[]): { card: T; we
 		.sort((a, b) => b.sortKey - a.sortKey)
 		.map(x => x.item);
 }
+
+
