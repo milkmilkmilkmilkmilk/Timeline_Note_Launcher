@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(git -C /mnt/c/Users/usumi/Documents/Obsidian_Vault/.obsidian/plugins/Timeline_Note_Launcher status)",
+      "Bash(npm run lint)"
+    ]
+  }
+}
