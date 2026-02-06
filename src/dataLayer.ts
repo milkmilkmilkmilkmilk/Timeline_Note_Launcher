@@ -11,6 +11,7 @@ import {
 	PreviewMode,
 	FileType,
 	DailyReviewHistory,
+	BookmarkInternalPlugin,
 	DEFAULT_REVIEW_LOG,
 	getTodayString,
 } from './types';
@@ -242,6 +243,16 @@ const CACHE_TTL = 5000;
 let bookmarkedPathsCache: { paths: Set<string>; timestamp: number } | null = null;
 
 /**
+ * ブックマークプラグインを取得するヘルパー
+ */
+export function getBookmarksPlugin(app: App): BookmarkInternalPlugin | null {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian 内部 API (internalPlugins) に型定義がないため
+	const plugin = (app as any).internalPlugins?.plugins?.bookmarks as BookmarkInternalPlugin | undefined;
+	if (!plugin?.enabled || !plugin.instance) return null;
+	return plugin;
+}
+
+/**
  * ブックマークされているファイルパスを取得（キャッシュ付き）
  */
 export function getBookmarkedPaths(app: App): Set<string> {
@@ -254,17 +265,10 @@ export function getBookmarkedPaths(app: App): Set<string> {
 
 	// キャッシュを再構築
 	const paths = new Set<string>();
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-	const bookmarksPlugin = (app as any).internalPlugins?.plugins?.bookmarks;
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-	if (bookmarksPlugin?.enabled && bookmarksPlugin?.instance) {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-		const items = bookmarksPlugin.instance.items || [];
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		for (const item of items as any[]) {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+	const bookmarks = getBookmarksPlugin(app);
+	if (bookmarks?.instance) {
+		for (const item of bookmarks.instance.items) {
 			if (item.type === 'file' && item.path) {
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
 				paths.add(item.path);
 			}
 		}
@@ -353,8 +357,7 @@ function extractTags(cache: CachedMetadata | null): string[] {
 
 	// frontmatterのtags
 	if (cache.frontmatter?.tags) {
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-		const fmTags = cache.frontmatter.tags;
+		const fmTags: unknown = cache.frontmatter.tags;
 		if (Array.isArray(fmTags)) {
 			tags.push(...fmTags.map(t => String(t)));
 		} else if (typeof fmTags === 'string') {
@@ -382,8 +385,7 @@ function isPinned(cache: CachedMetadata | null): boolean {
  */
 function getYamlNumber(cache: CachedMetadata | null, key: string): number | null {
 	if (!cache?.frontmatter || !key) return null;
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-	const value = cache.frontmatter[key];
+	const value: unknown = cache.frontmatter[key];
 	if (typeof value === 'number') return value;
 	if (typeof value === 'string') {
 		const parsed = parseFloat(value);
@@ -429,18 +431,15 @@ export type BacklinkIndex = Map<string, LinkedNote[]>;
  */
 export function buildBacklinkIndex(app: App): BacklinkIndex {
 	const index: BacklinkIndex = new Map();
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-	const resolvedLinks = (app.metadataCache as any).resolvedLinks;
+	const resolvedLinks = app.metadataCache.resolvedLinks;
 
 	if (!resolvedLinks) return index;
 
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
 	for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
 		const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
 		if (!sourceFile || !(sourceFile instanceof TFile)) continue;
 
-		const targetLinks = links as Record<string, number>;
-		for (const targetPath of Object.keys(targetLinks)) {
+		for (const targetPath of Object.keys(links)) {
 			if (targetPath === sourcePath) continue;
 
 			let backlinks = index.get(targetPath);
@@ -474,17 +473,14 @@ export function extractBacklinks(
 
 	// インデックスがない場合は従来の処理（後方互換性）
 	const backlinks: LinkedNote[] = [];
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-	const resolvedLinks = (app.metadataCache as any).resolvedLinks;
+	const resolvedLinks = app.metadataCache.resolvedLinks;
 
 	if (!resolvedLinks) return backlinks;
 
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
 	for (const [sourcePath, links] of Object.entries(resolvedLinks)) {
 		if (sourcePath === file.path) continue;
 
-		const targetLinks = links as Record<string, number>;
-		if (targetLinks[file.path]) {
+		if (links[file.path]) {
 			const sourceFile = app.vault.getAbstractFileByPath(sourcePath);
 			if (sourceFile && sourceFile instanceof TFile) {
 				backlinks.push({

@@ -1,5 +1,6 @@
 import tseslint from 'typescript-eslint';
 import obsidianmd from "eslint-plugin-obsidianmd";
+import comments from "@eslint-community/eslint-plugin-eslint-comments/configs";
 import globals from "globals";
 import { globalIgnores } from "eslint/config";
 
@@ -25,6 +26,14 @@ export default tseslint.config(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	comments.recommended,
+	{
+		rules: {
+			'@eslint-community/eslint-comments/require-description': 'error',
+			'@eslint-community/eslint-comments/no-unlimited-disable': 'error',
+			'@eslint-community/eslint-comments/no-unused-disable': 'error',
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",

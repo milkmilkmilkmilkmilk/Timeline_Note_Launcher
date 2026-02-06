@@ -2935,7 +2935,7 @@
 	color: var(--text-normal);
 	font-size: 18px;
 	line-height: 1.4;
-	resize: none;
+	resize: vertical;
 	font-family: var(--font-text);
 	outline: none;
 }

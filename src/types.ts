@@ -237,6 +237,26 @@ reference: [[{{originalNote}}]]
 {{comment}}
 `;
 
+/** ブックマークアイテム（Obsidian 内部 API） */
+export interface BookmarkItem {
+	type: string;
+	path?: string;
+	title?: string;
+}
+
+/** ブックマークプラグインインスタンス（Obsidian 内部 API） */
+export interface BookmarkPluginInstance {
+	items: BookmarkItem[];
+	addItem(item: BookmarkItem): void;
+	removeItem(item: BookmarkItem): void;
+}
+
+/** ブックマーク内部プラグイン（Obsidian 内部 API） */
+export interface BookmarkInternalPlugin {
+	enabled: boolean;
+	instance: BookmarkPluginInstance | null;
+}
+
 /** デフォルト設定 */
 export const DEFAULT_SETTINGS: PluginSettings = {
 	targetFolders: [],

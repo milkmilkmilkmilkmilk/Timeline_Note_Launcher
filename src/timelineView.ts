@@ -1,7 +1,7 @@
 // Timeline Note Launcher - Timeline View
-import { ItemView, WorkspaceLeaf, Platform, TFile, MarkdownRenderer, Component, Menu } from 'obsidian';
+import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component, Menu } from 'obsidian';
 import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
-import { getNextIntervals, getBookmarkedPaths, clearBookmarkCache } from './dataLayer';
+import { getNextIntervals, getBookmarkedPaths, getBookmarksPlugin, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
 import { LinkNoteModal } from './linkNoteModal';
@@ -457,13 +457,6 @@ export class TimelineView extends ItemView {
 			},
 		});
 
-		// テキストエリアの自動リサイズ
-		textarea.addEventListener('input', () => {
-			// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-			textarea.style.height = 'auto';
-			textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
-		});
-
 		// アクションバー
 		const actionsBar = inputArea.createDiv({ cls: 'timeline-compose-actions' });
 
@@ -495,8 +488,6 @@ export class TimelineView extends ItemView {
 
 			void this.createQuickNote(content).then(() => {
 				textarea.value = '';
-				// eslint-disable-next-line obsidianmd/no-static-styles-assignment
-				textarea.style.height = 'auto';
 				charCounter.textContent = '0';
 				postBtn.textContent = 'Post';
 
@@ -1561,8 +1552,8 @@ export class TimelineView extends ItemView {
 			// 直前のleafと同じタブグループに新しいタブを作成
 			const parent = this.previousActiveLeaf.parent;
 			if (parent) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-				targetLeaf = (this.app.workspace as any).createLeafInParent(parent, -1);
+				// parent は WorkspaceTabs | WorkspaceMobileDrawer だが createLeafInParent は WorkspaceSplit を期待する。実行時は動作するため型アサーションで対応
+				targetLeaf = this.app.workspace.createLeafInParent(parent as unknown as WorkspaceSplit, -1);
 			} else {
 				targetLeaf = this.app.workspace.getLeaf('tab');
 			}
@@ -1572,8 +1563,8 @@ export class TimelineView extends ItemView {
 			if (adjacentLeaf) {
 				const parent = adjacentLeaf.parent;
 				if (parent) {
-					// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-					targetLeaf = (this.app.workspace as any).createLeafInParent(parent, -1);
+					// parent は WorkspaceTabs | WorkspaceMobileDrawer だが createLeafInParent は WorkspaceSplit を期待する。実行時は動作するため型アサーションで対応
+					targetLeaf = this.app.workspace.createLeafInParent(parent as unknown as WorkspaceSplit, -1);
 				} else {
 					targetLeaf = this.app.workspace.getLeaf('tab');
 				}
@@ -1667,33 +1658,25 @@ export class TimelineView extends ItemView {
 	 * ブックマークをトグル
 	 */
 	private async toggleBookmark(path: string): Promise<boolean> {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-		const bookmarksPlugin = (this.app as any).internalPlugins?.plugins?.bookmarks;
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-		if (!bookmarksPlugin?.enabled || !bookmarksPlugin?.instance) {
+		const bookmarks = getBookmarksPlugin(this.app);
+		if (!bookmarks?.instance) {
 			return false;
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-		const instance = bookmarksPlugin.instance;
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-		const items = instance.items || [];
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-		const existingIndex = items.findIndex((item: { type: string; path?: string }) =>
+		const instance = bookmarks.instance;
+		const existing = instance.items.find(item =>
 			item.type === 'file' && item.path === path
 		);
 
 		let result: boolean;
-		if (existingIndex >= 0) {
+		if (existing) {
 			// 既にブックマークされている場合は削除
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-			instance.removeItem(items[existingIndex]);
+			instance.removeItem(existing);
 			result = false;
 		} else {
 			// ブックマークを追加
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file && file instanceof TFile) {
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 				instance.addItem({ type: 'file', path: path, title: '' });
 				result = true;
 			} else {

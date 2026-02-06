@@ -1,5 +1,5 @@
 // Timeline Note Launcher - Settings Tab
-import { App, PluginSettingTab, Setting, Platform } from 'obsidian';
+import { App, Modal, PluginSettingTab, Setting, Platform } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
 import { SelectionMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, UITheme, DEFAULT_QUOTE_NOTE_TEMPLATE, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 import { calculateStatistics, ReviewStatistics } from './dataLayer';
@@ -18,6 +18,47 @@ function debounce<T extends (...args: Parameters<T>) => void>(
 		}
 		timeout = setTimeout(() => func(...args), wait);
 	};
+}
+
+/**
+ * 確認ダイアログ用モーダル
+ */
+class ConfirmModal extends Modal {
+	private message: string;
+	private onConfirm: () => void | Promise<void>;
+
+	constructor(app: App, message: string, onConfirm: () => void | Promise<void>) {
+		super(app);
+		this.message = message;
+		this.onConfirm = onConfirm;
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.createEl('p', { text: this.message });
+
+		new Setting(contentEl)
+			.addButton(button => button
+				.setButtonText('Cancel')
+				.onClick(() => { this.close(); }))
+			.addButton(button => button
+				.setButtonText('Confirm')
+				.setWarning()
+				.onClick(() => {
+					void this.onConfirm();
+					this.close();
+				}));
+
+		// Ctrl+Enter で確認
+		this.scope.register(['Mod'], 'Enter', () => {
+			void this.onConfirm();
+			this.close();
+		});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
 }
 
 export class TimelineSettingTab extends PluginSettingTab {
@@ -45,7 +86,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings
+		// eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings -- プラグイン名をそのまま見出しに使用
 		new Setting(containerEl).setName('Timeline note launcher').setHeading();
 
 		// === 対象ノート設定 ===
@@ -55,7 +96,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Target folders')
 			.setDesc('Comma-separated folder paths (empty = all folders)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はユーザー入力例のため
 				.setPlaceholder('folder1, folder2/subfolder')
 				.setValue(this.plugin.data.settings.targetFolders.join(', '))
 				.onChange((value) => {
@@ -70,7 +111,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Exclude folders')
 			.setDesc('Comma-separated folder paths to exclude from timeline')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はユーザー入力例のため
 				.setPlaceholder('templates, archive')
 				.setValue(this.plugin.data.settings.excludeFolders.join(', '))
 				.onChange((value) => {
@@ -104,7 +145,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addDropdown(dropdown => dropdown
 				.addOption('random', 'Random')
 				.addOption('age-priority', 'Age priority (older = higher)')
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- SRS は略語のため
 				.addOption('srs', 'SRS (spaced repetition)')
 				.setValue(this.plugin.data.settings.selectionMode)
 				.onChange(async (value) => {
@@ -330,7 +371,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Difficulty YAML key')
 			.setDesc('Read difficulty from this frontmatter key (leave empty to ignore)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
 				.setPlaceholder('difficulty')
 				.setValue(this.plugin.data.settings.yamlDifficultyKey)
 				.onChange(async (value) => {
@@ -342,7 +383,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Priority YAML key')
 			.setDesc('Read priority from this frontmatter key (higher = shown first)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
 				.setPlaceholder('priority')
 				.setValue(this.plugin.data.settings.yamlPriorityKey)
 				.onChange(async (value) => {
@@ -383,7 +424,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Quick note folder')
 			.setDesc('Folder to save quick notes (empty = vault root)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はフォルダパス例のため
 				.setPlaceholder('notes/quick')
 				.setValue(this.plugin.data.settings.quickNoteFolder)
 				.onChange(async (value) => {
@@ -498,19 +539,22 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addButton(button => button
 				.setButtonText('Reset')
 				.setWarning()
-				.onClick(async () => {
-					// eslint-disable-next-line no-alert
-					if (confirm('Are you sure you want to reset all review data?')) {
-						this.plugin.data.reviewLogs = {};
-						this.plugin.data.dailyStats = {
-							date: '',
-							newReviewed: 0,
-							reviewedCount: 0,
-						};
-						this.plugin.data.reviewHistory = {};
-						await this.plugin.syncAndSave();
-						this.display();
-					}
+				.onClick(() => {
+					new ConfirmModal(
+						this.app,
+						'Are you sure you want to reset all review data?',
+						async () => {
+							this.plugin.data.reviewLogs = {};
+							this.plugin.data.dailyStats = {
+								date: '',
+								newReviewed: 0,
+								reviewedCount: 0,
+							};
+							this.plugin.data.reviewHistory = {};
+							await this.plugin.syncAndSave();
+							this.display();
+						}
+					).open();
 				}));
 	}
 
