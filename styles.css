@@ -187,6 +187,22 @@
 	letter-spacing: 0.5px;
 }
 
+.timeline-filter-tags-toggle {
+	padding: 2px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 999px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	font-size: 10px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.timeline-filter-tags-toggle:hover {
+	color: var(--text-normal);
+	border-color: var(--interactive-accent);
+}
+
 .timeline-filter-tag-chips {
 	display: flex;
 	flex-wrap: wrap;
@@ -219,6 +235,10 @@
 	font-size: 11px;
 	color: var(--text-faint);
 	padding: 4px 8px;
+}
+
+.timeline-filter-tags.is-collapsed .timeline-filter-tag-chips {
+	display: none;
 }
 
 /* モバイル向けフィルタバー調整 */
