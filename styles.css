@@ -233,6 +233,12 @@
 
 .timeline-mobile .timeline-filter-types {
 	width: 100%;
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: thin;
+	scrollbar-color: var(--background-modifier-border) transparent;
 }
 
 .timeline-mobile .timeline-search-input {
@@ -241,8 +247,10 @@
 }
 
 .timeline-mobile .timeline-filter-type-btn {
-	padding: 8px 10px;
-	font-size: 16px;
+	flex: 0 0 auto;
+	padding: 8px 12px;
+	font-size: 14px;
+	line-height: 1;
 }
 
 .timeline-mobile .timeline-filter-tag-chip {
