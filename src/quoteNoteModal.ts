@@ -1,7 +1,7 @@
 // Timeline Note Launcher - Quote Note Modal
 import { App, Modal, Platform, TFile } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { createQuoteNote, getFileType, isTextReadableFile } from './dataLayer';
+import { createQuoteNote, getFileTypeFromFile, isTextReadableFile } from './dataLayer';
 import type { FileType } from './types';
 
 export class QuoteNoteModal extends Modal {
@@ -21,7 +21,7 @@ export class QuoteNoteModal extends Modal {
 		super(app);
 		this.plugin = plugin;
 		this.file = file;
-		this.fileType = getFileType(file.extension);
+		this.fileType = getFileTypeFromFile(file);
 	}
 
 	async onOpen(): Promise<void> {

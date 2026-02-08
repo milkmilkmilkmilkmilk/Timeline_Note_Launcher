@@ -1,7 +1,7 @@
 // Timeline Note Launcher - Comment Modal
-import { App, Modal, Platform, TFile } from 'obsidian';
+import { App, Modal, Notice, Platform, TFile } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { appendCommentToNote, getFileType, isTextReadableFile } from './dataLayer';
+import { appendCommentToNote, getFileTypeFromFile, isTextReadableFile } from './dataLayer';
 import type { FileType } from './types';
 
 export class CommentModal extends Modal {
@@ -20,7 +20,7 @@ export class CommentModal extends Modal {
 		super(app);
 		this.plugin = plugin;
 		this.file = file;
-		this.fileType = getFileType(file.extension);
+		this.fileType = getFileTypeFromFile(file);
 	}
 
 	async onOpen(): Promise<void> {
@@ -196,7 +196,10 @@ export class CommentModal extends Modal {
 		}
 
 		// ノートにコメントを追記（非マークダウンはコンパニオンノートへ）
-		await appendCommentToNote(this.app, this.file, comment, this.fileType);
+		const savedPath = await appendCommentToNote(this.app, this.file, comment, this.fileType);
+
+		// 保存先を通知
+		new Notice(`コメントを保存しました: ${savedPath}`);
 
 		// ドラフトを削除
 		await this.plugin.deleteCommentDraft(this.file.path);

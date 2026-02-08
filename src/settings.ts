@@ -709,6 +709,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			{ key: 'pdf', icon: '塘', label: 'PDF' },
 			{ key: 'audio', icon: '七', label: 'Audio' },
 			{ key: 'video', icon: '汐', label: 'Video' },
+			{ key: 'excalidraw', icon: '🎨', label: 'Excalidraw' },
 		];
 
 		for (const { key, icon, label } of types) {

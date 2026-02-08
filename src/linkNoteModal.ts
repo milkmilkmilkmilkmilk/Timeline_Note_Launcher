@@ -1,6 +1,6 @@
 // Timeline Note Launcher - Link Note Modal
 import { App, Modal, Platform, TFile } from 'obsidian';
-import { appendLinksToNote, extractOutgoingLinks, getCompanionNotePath, getFileType } from './dataLayer';
+import { appendLinksToNote, extractOutgoingLinks, getCompanionNotePath, getFileTypeFromFile } from './dataLayer';
 import { FileType, LinkedNote } from './types';
 
 export class LinkNoteModal extends Modal {
@@ -18,7 +18,7 @@ export class LinkNoteModal extends Modal {
 	constructor(app: App, file: TFile) {
 		super(app);
 		this.file = file;
-		this.fileType = getFileType(file.extension);
+		this.fileType = getFileTypeFromFile(file);
 	}
 
 	onOpen(): void {

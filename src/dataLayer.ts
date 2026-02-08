@@ -302,6 +302,15 @@ export function getFileType(extension: string): FileType {
 }
 
 /**
+ * TFileからファイルタイプを判定（Excalidrawファイル名を考慮）
+ */
+export function getFileTypeFromFile(file: TFile): FileType {
+	const name = file.name.toLowerCase();
+	if (name.endsWith('.excalidraw.md') || name.endsWith('.excalidraw')) return 'excalidraw';
+	return getFileType(file.extension);
+}
+
+/**
  * 対象ファイルを列挙・フィルタリングする
  * ターゲットフォルダ指定時は対象フォルダのみ走査して最適化
  */
@@ -336,10 +345,10 @@ export function enumerateTargetNotes(
 			if (inExcludedFolder) return false;
 		}
 
-		// タグフィルタ（マークダウンファイルのみ適用）
+		// タグフィルタ（マークダウン/Excalidrawファイルのみ適用）
 		if (settings.targetTags.length > 0) {
-			const fileType = getFileType(file.extension);
-			if (fileType === 'markdown') {
+			const fileType = getFileTypeFromFile(file);
+			if (fileType === 'markdown' || fileType === 'excalidraw') {
 				const cache = app.metadataCache.getFileCache(file);
 				const fileTags = extractTags(cache);
 				const hasTag = settings.targetTags.some(tag =>
@@ -438,6 +447,46 @@ function extractNoteDate(
 
 	// 3. ファイル作成日時にフォールバック
 	return file.stat.ctime;
+}
+
+/**
+ * frontmatter から表示用 Properties を抽出
+ * 内部キー・既存表示項目を除外し、設定に応じてフィルタリング
+ */
+function extractProperties(
+	cache: CachedMetadata | null,
+	settings: PluginSettings
+): Record<string, unknown> {
+	if (settings.showProperties === 'off' || !cache?.frontmatter) {
+		return {};
+	}
+
+	// 内部キー・既存表示項目を除外
+	const excludeKeys = new Set(['position', 'tags', 'tag', 'cssclasses', 'cssclass', 'aliases', 'alias']);
+
+	const result: Record<string, unknown> = {};
+
+	if (settings.showProperties === 'custom') {
+		// 指定キーのみ抽出
+		const keys = settings.propertiesKeys
+			.split(',')
+			.map(k => k.trim())
+			.filter(k => k.length > 0);
+		for (const key of keys) {
+			if (!excludeKeys.has(key) && key in cache.frontmatter) {
+				result[key] = cache.frontmatter[key];
+			}
+		}
+	} else {
+		// 全キーを抽出
+		for (const [key, value] of Object.entries(cache.frontmatter)) {
+			if (!excludeKeys.has(key)) {
+				result[key] = value;
+			}
+		}
+	}
+
+	return result;
 }
 
 /**
@@ -699,12 +748,12 @@ export function createCandidateCard(
 ): CandidateCard {
 	const log = reviewLog ?? DEFAULT_REVIEW_LOG;
 	const now = Date.now();
-	const fileType = getFileType(file.extension);
+	const fileType = getFileTypeFromFile(file);
 
 	let pinned = false;
 	let yamlPriority: number | null = null;
 	let createdAt: number | null = file.stat.ctime;
-	if (fileType === 'markdown') {
+	if (fileType === 'markdown' || fileType === 'excalidraw') {
 		const cache = app.metadataCache.getFileCache(file);
 		pinned = isPinned(cache);
 		yamlPriority = getYamlNumber(cache, settings.yamlPriorityKey);
@@ -739,7 +788,7 @@ export async function createTimelineCard(
 ): Promise<TimelineCard> {
 	const log = reviewLog ?? DEFAULT_REVIEW_LOG;
 	const now = Date.now();
-	const fileType = getFileType(file.extension);
+	const fileType = getFileTypeFromFile(file);
 
 	// 新規カード判定（一度もレビューしていない）
 	const isNew = log.reviewCount === 0;
@@ -747,7 +796,7 @@ export async function createTimelineCard(
 	// 期限到来判定
 	const isDue = log.nextReviewAt !== null && log.nextReviewAt <= now;
 
-	// マークダウンファイルの場合
+	// マークダウンファイルの場合（Excalidraw除く）
 	if (fileType === 'markdown') {
 		const cache = app.metadataCache.getFileCache(file);
 		const content = await app.vault.cachedRead(file);
@@ -788,6 +837,8 @@ export async function createTimelineCard(
 			yamlPriority,
 			// 作成日
 			createdAt: extractNoteDate(cache, file, settings.yamlDateField),
+			// Properties
+			properties: extractProperties(cache, settings),
 		};
 	}
 
@@ -842,6 +893,10 @@ export async function createTimelineCard(
 				preview = '📓 Jupyter Notebook';
 			}
 			break;
+		case 'excalidraw':
+			preview = '🎨 Excalidraw drawing';
+			firstImagePath = file.path;  // 埋め込み表示用
+			break;
 		default:
 			preview = `📁 ${file.extension.toUpperCase()} file`;
 			break;
@@ -849,6 +904,37 @@ export async function createTimelineCard(
 
 	// バックリンクを抽出（非マークダウンでもリンクされている可能性がある）
 	const backlinks = extractBacklinks(app, file, backlinkIndex);
+
+	// Excalidraw（.excalidraw.md）はメタデータキャッシュからタグ等を補完
+	if (fileType === 'excalidraw') {
+		const cache = app.metadataCache.getFileCache(file);
+		const outgoingLinks = extractOutgoingLinks(app, file, cache);
+		const yamlDifficulty = getYamlNumber(cache, settings.yamlDifficultyKey);
+		const yamlPriority = getYamlNumber(cache, settings.yamlPriorityKey);
+		return {
+			path: file.path,
+			title: file.basename,
+			preview,
+			fileType,
+			extension: file.extension,
+			firstImagePath,
+			outgoingLinks,
+			backlinks,
+			lastReviewedAt: log.lastReviewedAt,
+			reviewCount: log.reviewCount,
+			pinned: isPinned(cache),
+			tags: extractTags(cache),
+			nextReviewAt: log.nextReviewAt,
+			difficulty: log.difficulty,
+			interval: log.interval,
+			isNew,
+			isDue,
+			yamlDifficulty,
+			yamlPriority,
+			createdAt: extractNoteDate(cache, file, settings.yamlDateField),
+			properties: extractProperties(cache, settings),
+		};
+	}
 
 	return {
 		path: file.path,
@@ -1030,7 +1116,7 @@ export async function appendCommentToNote(
 	file: TFile,
 	comment: string,
 	fileType?: FileType
-): Promise<void> {
+): Promise<string> {
 	const now = new Date();
 	const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -1044,8 +1130,10 @@ export async function appendCommentToNote(
 	if (fileType && fileType !== 'markdown') {
 		const companionNote = await getOrCreateCompanionNote(app, file);
 		await app.vault.append(companionNote, calloutContent);
+		return companionNote.path;
 	} else {
 		await app.vault.append(file, calloutContent);
+		return file.path;
 	}
 }
 
@@ -1144,6 +1232,7 @@ export function recordReviewToHistory(
 			video: 0,
 			office: 0,
 			ipynb: 0,
+			excalidraw: 0,
 			other: 0,
 		},
 	};
@@ -1155,7 +1244,7 @@ export function recordReviewToHistory(
 			reviewedCount: existing.reviewedCount + 1,
 			fileTypes: {
 				...existing.fileTypes,
-				[fileType]: existing.fileTypes[fileType] + 1,
+				[fileType]: (existing.fileTypes[fileType] ?? 0) + 1,
 			},
 		},
 	};
@@ -1204,6 +1293,7 @@ export interface ReviewStatistics {
 		video: number;
 		office: number;
 		ipynb: number;
+		excalidraw: number;
 		other: number;
 	};
 	heatmapData: { date: string; count: number }[];
@@ -1248,6 +1338,7 @@ export function calculateStatistics(
 		video: 0,
 		office: 0,
 		ipynb: 0,
+		excalidraw: 0,
 		other: 0,
 	};
 

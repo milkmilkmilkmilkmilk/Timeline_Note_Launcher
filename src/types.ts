@@ -25,7 +25,7 @@ export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
 export type ImageSizeMode = 'small' | 'medium' | 'large' | 'full';
 
 /** ファイルタイプ */
-export type FileType = 'markdown' | 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'office' | 'ipynb' | 'other';
+export type FileType = 'markdown' | 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'office' | 'ipynb' | 'excalidraw' | 'other';
 
 /** ノートごとのレビューログ（data.json に保存） */
 export interface NoteReviewLog {
@@ -101,6 +101,10 @@ export interface PluginSettings {
 	// クイックノート設定
 	quickNoteFolder: string;      // クイックノートの保存先フォルダ
 	quickNoteTemplate: string;    // クイックノート用テンプレート
+
+	// Properties表示設定
+	showProperties: 'off' | 'all' | 'custom';  // Properties表示モード
+	propertiesKeys: string;                      // カンマ区切りの表示キー（custom時のみ使用）
 }
 
 /** コメントドラフト */
@@ -145,6 +149,7 @@ export interface DailyReviewHistory {
 			video: number;
 			office: number;
 			ipynb: number;
+			excalidraw: number;
 			other: number;
 		};
 	};
@@ -202,6 +207,8 @@ export interface TimelineCard {
 	yamlPriority: number | null;
 	// 作成日（フィルタリング用）
 	createdAt: number | null;
+	// Properties（フィルタ済み frontmatter）
+	properties: Record<string, unknown>;
 }
 
 /** 選択フェーズ用の軽量カード（ファイルI/Oなし） */
@@ -321,6 +328,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	// クイックノート
 	quickNoteFolder: '',
 	quickNoteTemplate: DEFAULT_QUICK_NOTE_TEMPLATE,
+	// Properties表示
+	showProperties: 'off',
+	propertiesKeys: '',
 };
 
 /** デフォルトデータ */

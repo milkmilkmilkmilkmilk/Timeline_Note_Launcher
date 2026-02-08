@@ -85,6 +85,7 @@ export function mergeReviewHistory(
 					video: Math.max(localEntry.fileTypes.video, remoteEntry.fileTypes.video),
 					office: Math.max(localEntry.fileTypes.office, remoteEntry.fileTypes.office),
 					ipynb: Math.max(localEntry.fileTypes.ipynb, remoteEntry.fileTypes.ipynb),
+					excalidraw: Math.max(localEntry.fileTypes.excalidraw ?? 0, remoteEntry.fileTypes.excalidraw ?? 0),
 					other: Math.max(localEntry.fileTypes.other, remoteEntry.fileTypes.other),
 				},
 			};
