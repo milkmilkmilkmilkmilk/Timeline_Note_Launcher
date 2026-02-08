@@ -17,6 +17,8 @@ npm run lint         # Run ESLint with obsidianmd plugin rules
 
 CI runs `npm run build` and `npm run lint` on Node 20.x and 22.x (`.github/workflows/lint.yml`). No automated test suite exists; testing is manual in Obsidian.
 
+**Before committing**: Always run `npm run lint` to catch unused imports, type mismatches, and ESLint rule violations early.
+
 ## Architecture
 
 ```
@@ -76,6 +78,8 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 - When adding new settings: update `PluginSettings` interface, `DEFAULT_SETTINGS`, and settings UI in `settings.ts`
 - PDF files are displayed using interactive `<embed>` elements with an "Open" button overlay
 - Source comments are in Japanese; maintain this convention
+- This is a TypeScript-only codebase; do not create JavaScript files
 - ESLint uses `eslint-plugin-obsidianmd` with rules for settings headings, sentence case, and no static styles assignment
+- ESLint disable comments require descriptions (`@eslint-community/eslint-comments/require-description`); use format: `// eslint-disable-next-line rule-name -- reason`
 - Modal patterns: all modals accept a `plugin` reference (typed as `import type` from `main`), store drafts in plugin data, and support keyboard shortcuts (Ctrl+Enter to confirm)
 - Link generation uses `app.fileManager.generateMarkdownLink()` to respect the user's wikilink vs markdown link preference

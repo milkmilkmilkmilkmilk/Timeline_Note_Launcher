@@ -1,11 +1,11 @@
-﻿// Timeline Note Launcher - Settings Tab
+// Timeline Note Launcher - Settings Tab
 import { App, Modal, PluginSettingTab, Setting, Platform } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
 import { SelectionMode, SrsReviewUnlockMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, UITheme, DEFAULT_QUOTE_NOTE_TEMPLATE, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 import { calculateStatistics, ReviewStatistics } from './dataLayer';
 
 /**
- * 繝・ヰ繧ｦ繝ｳ繧ｹ髢｢謨ｰ
+ * デバウンス関数
  */
 function debounce<T extends (...args: Parameters<T>) => void>(
 	func: T,
@@ -21,7 +21,7 @@ function debounce<T extends (...args: Parameters<T>) => void>(
 }
 
 /**
- * 遒ｺ隱阪ム繧､繧｢繝ｭ繧ｰ逕ｨ繝｢繝ｼ繝繝ｫ
+ * 確認ダイアログ用モーダル
  */
 class ConfirmModal extends Modal {
 	private message: string;
@@ -49,7 +49,7 @@ class ConfirmModal extends Modal {
 					this.close();
 				}));
 
-		// Ctrl+Enter 縺ｧ遒ｺ隱・
+		// Ctrl+Enter で確認
 		this.scope.register(['Mod'], 'Enter', () => {
 			void this.onConfirm();
 			this.close();
@@ -70,12 +70,12 @@ export class TimelineSettingTab extends PluginSettingTab {
 		super(app, plugin);
 		this.plugin = plugin;
 
-		// 繝・ヰ繧ｦ繝ｳ繧ｹ縺輔ｌ縺滉ｿ晏ｭ倬未謨ｰ・・00ms驕・ｻｶ・・
+		// デバウンスされた保存関数（500ms遅延）
 		this.debouncedSave = debounce(async () => {
 			await this.plugin.syncAndSave();
 		}, 500);
 
-		// 繝・ヰ繧ｦ繝ｳ繧ｹ縺輔ｌ縺滉ｿ晏ｭ假ｼ九Μ繝輔Ξ繝・す繝･髢｢謨ｰ・・00ms驕・ｻｶ・・
+		// デバウンスされた保存・リフレッシュ関数（500ms遅延）
 		this.debouncedSaveAndRefresh = debounce(async () => {
 			await this.plugin.syncAndSave();
 			this.plugin.refreshAllViews();
@@ -86,17 +86,17 @@ export class TimelineSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings -- 繝励Λ繧ｰ繧､繝ｳ蜷阪ｒ縺昴・縺ｾ縺ｾ隕句・縺励↓菴ｿ逕ｨ
+		// eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings -- プラグイン名をそのまま見出しに使用
 		new Setting(containerEl).setName('Timeline note launcher').setHeading();
 
-		// === 蟇ｾ雎｡繝弱・繝郁ｨｭ螳・===
+		// === 対象ノート設定 ===
 		new Setting(containerEl).setName('Target notes').setHeading();
 
 		new Setting(containerEl)
 			.setName('Target folders')
 			.setDesc('Comma-separated folder paths (empty = all folders)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder 縺ｯ繝ｦ繝ｼ繧ｶ繝ｼ蜈･蜉帑ｾ九・縺溘ａ
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はユーザー入力例のため
 				.setPlaceholder('folder1, folder2/subfolder')
 				.setValue(this.plugin.data.settings.targetFolders.join(', '))
 				.onChange((value) => {
@@ -111,7 +111,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Exclude folders')
 			.setDesc('Comma-separated folder paths to exclude from timeline')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder 縺ｯ繝ｦ繝ｼ繧ｶ繝ｼ蜈･蜉帑ｾ九・縺溘ａ
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はユーザー入力例のため
 				.setPlaceholder('templates, archive')
 				.setValue(this.plugin.data.settings.excludeFolders.join(', '))
 				.onChange((value) => {
@@ -136,7 +136,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					this.debouncedSaveAndRefresh();
 				}));
 
-		// === 驕ｸ謚槭Δ繝ｼ繝・===
+		// === 選択モード ===
 		new Setting(containerEl).setName('Selection mode').setHeading();
 
 		new Setting(containerEl)
@@ -145,17 +145,17 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addDropdown(dropdown => dropdown
 				.addOption('random', 'Random')
 				.addOption('age-priority', 'Age priority (older = higher)')
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- SRS 縺ｯ逡･隱槭・縺溘ａ
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- SRS は略語のため
 				.addOption('srs', 'SRS (spaced repetition)')
 				.setValue(this.plugin.data.settings.selectionMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.selectionMode = value as SelectionMode;
 					await this.plugin.syncAndSave();
-					// 險ｭ螳夂判髱｢繧貞・謠冗判縺励※SRS險ｭ螳壹ｒ陦ｨ遉ｺ/髱櫁｡ｨ遉ｺ
+					// 設定画面を再描画してSRS設定を表示/非表示
 					this.display();
 				}));
 
-		// === SRS險ｭ螳夲ｼ・RS繝｢繝ｼ繝画凾縺ｮ縺ｿ陦ｨ遉ｺ・・===
+		// === SRS設定（SRSモード時のみ表示） ===
 		if (this.plugin.data.settings.selectionMode === 'srs') {
 			new Setting(containerEl).setName('SRS').setHeading();
 
@@ -246,7 +246,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			}
 		}
 
-		// === 陦ｨ遉ｺ險ｭ螳・===
+		// === 表示設定 ===
 		new Setting(containerEl).setName('Display').setHeading();
 
 		new Setting(containerEl)
@@ -263,7 +263,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
-		// 繧ｰ繝ｪ繝・ラ繝｢繝ｼ繝画凾縺ｮ縺ｿ蛻玲焚險ｭ螳壹ｒ陦ｨ遉ｺ
+		// グリッドモード時のみ列数設定を表示
 		if (this.plugin.data.settings.viewMode === 'grid') {
 			new Setting(containerEl)
 				.setName('Grid columns')
@@ -305,11 +305,11 @@ export class TimelineSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.data.settings.previewMode = value as PreviewMode;
 					await this.plugin.syncAndSave();
-					// 險ｭ螳夂判髱｢繧貞・謠冗判縺励※previewLines繧定｡ｨ遉ｺ/髱櫁｡ｨ遉ｺ
+					// 設定画面を再描画してpreviewLinesを表示/非表示
 					this.display();
 				}));
 
-		// previewMode 縺・'lines' 縺ｮ譎ゅ・縺ｿ陦梧焚險ｭ螳壹ｒ陦ｨ遉ｺ
+		// previewMode が 'lines' の時のみ行数設定を表示
 		if (this.plugin.data.settings.previewMode === 'lines') {
 			new Setting(containerEl)
 				.setName('Preview lines')
@@ -328,15 +328,15 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Color theme')
 			.setDesc('Accent color for timeline cards')
 			.addDropdown(dropdown => dropdown
-				.addOption('default', '耳 default')
-				.addOption('blue', '鳩 blue')
-				.addOption('cyan', 'ｩｵ cyan')
-				.addOption('green', '泙 green')
-				.addOption('yellow', '泯 yellow')
-				.addOption('orange', '泛 orange')
-				.addOption('red', '閥 red')
-				.addOption('pink', 'ｩｷ pink')
-				.addOption('purple', '泪 purple')
+				.addOption('default', '耳 default')
+				.addOption('blue', '鳩 blue')
+				.addOption('cyan', 'ｩｵ cyan')
+				.addOption('green', '泙 green')
+				.addOption('yellow', '泯 yellow')
+				.addOption('orange', '泛 orange')
+				.addOption('red', '閥 red')
+				.addOption('pink', 'ｩｷ pink')
+				.addOption('purple', '泪 purple')
 				.setValue(this.plugin.data.settings.colorTheme)
 				.onChange(async (value) => {
 					this.plugin.data.settings.colorTheme = value as ColorTheme;
@@ -377,7 +377,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					await this.plugin.syncAndSave();
 				}));
 
-		// Desktop蟆ら畑險ｭ螳・
+		// Desktop専用設定
 		if (!Platform.isMobile) {
 			new Setting(containerEl)
 				.setName('Enable split view')
@@ -397,19 +397,19 @@ export class TimelineSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.data.settings.mobileViewOnDesktop = value;
 						await this.plugin.syncAndSave();
-						// 繧ｿ繧､繝繝ｩ繧､繝ｳ繝薙Η繝ｼ繧呈峩譁ｰ縺励※騾｣蜍・
+						// タイムラインビューを更新して連動
 						this.plugin.refreshAllViews();
 					}));
 		}
 
-		// === YAML騾｣謳ｺ ===
+		// === YAML連携 ===
 		new Setting(containerEl).setName('YAML integration').setHeading();
 
 		new Setting(containerEl)
 			.setName('Difficulty YAML key')
 			.setDesc('Read difficulty from this frontmatter key (leave empty to ignore)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder 縺ｯ frontmatter 繧ｭ繝ｼ蜷阪・縺溘ａ
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
 				.setPlaceholder('difficulty')
 				.setValue(this.plugin.data.settings.yamlDifficultyKey)
 				.onChange(async (value) => {
@@ -421,7 +421,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Priority YAML key')
 			.setDesc('Read priority from this frontmatter key (higher = shown first)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder 縺ｯ frontmatter 繧ｭ繝ｼ蜷阪・縺溘ａ
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
 				.setPlaceholder('priority')
 				.setValue(this.plugin.data.settings.yamlPriorityKey)
 				.onChange(async (value) => {
@@ -441,7 +441,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					await this.plugin.syncAndSave();
 				}));
 
-		// === 蠑慕畑繝弱・繝郁ｨｭ螳・===
+		// === 引用ノート設定 ===
 		new Setting(containerEl).setName('Quote note').setHeading();
 
 		new Setting(containerEl)
@@ -455,7 +455,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					await this.plugin.syncAndSave();
 				}));
 
-		// 繝・Φ繝励Ξ繝ｼ繝医Μ繧ｻ繝・ヨ繝懊ち繝ｳ
+		// テンプレートリセットボタン
 		new Setting(containerEl)
 			.setName('Reset template')
 			.setDesc('Reset quote note template to default')
@@ -467,14 +467,14 @@ export class TimelineSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
-		// === 繧ｯ繧､繝・け繝弱・繝郁ｨｭ螳・===
+		// === クイックノート設定 ===
 		new Setting(containerEl).setName('Quick note (compose box)').setHeading();
 
 		new Setting(containerEl)
 			.setName('Quick note folder')
 			.setDesc('Folder to save quick notes (empty = vault root)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder 縺ｯ繝輔か繝ｫ繝繝代せ萓九・縺溘ａ
+				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はフォルダパス例のため
 				.setPlaceholder('notes/quick')
 				.setValue(this.plugin.data.settings.quickNoteFolder)
 				.onChange(async (value) => {
@@ -504,7 +504,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 					this.display();
 				}));
 
-		// === 蜍穂ｽ懆ｨｭ螳・===
+		// === 動作設定 ===
 		new Setting(containerEl).setName('Behavior').setHeading();
 
 		new Setting(containerEl)
@@ -571,10 +571,10 @@ export class TimelineSettingTab extends PluginSettingTab {
 					await this.plugin.syncAndSave();
 				}));
 
-		// === 邨ｱ險・===
+		// === 統計 ===
 		new Setting(containerEl).setName('Statistics').setHeading();
 
-		// 邨ｱ險医ｒ險育ｮ・
+		// 統計を計算
 		const stats = calculateStatistics(
 			this.plugin.data.reviewLogs,
 			this.plugin.data.reviewHistory || {}
@@ -582,7 +582,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 
 		this.renderStatisticsDashboard(containerEl, stats);
 
-		// 繝ｪ繧ｻ繝・ヨ繝懊ち繝ｳ
+		// リセットボタン
 		new Setting(containerEl)
 			.setName('Reset all review data')
 			.setDesc('Clear all review logs and statistics. This cannot be undone!')
@@ -609,37 +609,37 @@ export class TimelineSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 邨ｱ險医ム繝・す繝･繝懊・繝峨ｒ謠冗判
+	 * 統計ダッシュボードを描画
 	 */
 	private renderStatisticsDashboard(containerEl: HTMLElement, stats: ReviewStatistics): void {
 		const dashboard = containerEl.createDiv({ cls: 'timeline-stats-dashboard' });
 
-		// 繧ｵ繝槭Μ繝ｼ繧ｫ繝ｼ繝・
+		// サマリーカード
 		const summaryRow = dashboard.createDiv({ cls: 'timeline-stats-summary' });
 
 		this.createStatCard(summaryRow, 'Today', `${stats.todayReviews}`, 'reviews');
 		this.createStatCard(summaryRow, 'This Week', `${stats.weekReviews}`, 'reviews');
 		this.createStatCard(summaryRow, 'This Month', `${stats.monthReviews}`, 'reviews');
 
-		// 繧ｹ繝医Μ繝ｼ繧ｯ陦ｨ遉ｺ
+		// ストリーク表示
 		if (stats.currentStreak > 0) {
 			const streakEl = dashboard.createDiv({ cls: 'timeline-stats-streak' });
-			streakEl.createSpan({ cls: 'timeline-streak-icon', text: '櫨' });
+			streakEl.createSpan({ cls: 'timeline-streak-icon', text: '櫨' });
 			streakEl.createSpan({ cls: 'timeline-streak-count', text: `${stats.currentStreak}` });
 			streakEl.createSpan({ text: ' day streak!' });
 		}
 
-		// 繝偵・繝医・繝・・
+		// ヒートマップ
 		const heatmapSection = dashboard.createDiv({ cls: 'timeline-stats-heatmap-section' });
 		heatmapSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'Activity (last 30 days)' });
 		this.renderHeatmap(heatmapSection, stats.heatmapData);
 
-		// 繝輔ぃ繧､繝ｫ繧ｿ繧､繝怜挨邨ｱ險・
+		// ファイルタイプ別統計
 		const typeSection = dashboard.createDiv({ cls: 'timeline-stats-types-section' });
 		typeSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'By file type (30 days)' });
 		this.renderFileTypeBreakdown(typeSection, stats.fileTypeBreakdown);
 
-		// 隧ｳ邏ｰ邨ｱ險・
+		// 詳細統計
 		const detailSection = dashboard.createDiv({ cls: 'timeline-stats-detail-section' });
 		detailSection.createEl('div', { cls: 'timeline-stats-section-title', text: 'Overall' });
 		const detailGrid = detailSection.createDiv({ cls: 'timeline-stats-detail-grid' });
@@ -656,7 +656,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 邨ｱ險医き繝ｼ繝峨ｒ菴懈・
+	 * 統計カードを作成
 	 */
 	private createStatCard(container: HTMLElement, label: string, value: string, unit: string): void {
 		const card = container.createDiv({ cls: 'timeline-stat-card' });
@@ -666,18 +666,18 @@ export class TimelineSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 繝偵・繝医・繝・・繧呈緒逕ｻ
+	 * ヒートマップを描画
 	 */
 	private renderHeatmap(container: HTMLElement, data: { date: string; count: number }[]): void {
 		const heatmap = container.createDiv({ cls: 'timeline-heatmap' });
 
-		// 譛螟ｧ蛟､繧貞叙蠕暦ｼ・縺ｮ蝣ｴ蜷医・1縺ｫ縺励※髯､邂励お繝ｩ繝ｼ繧帝亟縺撰ｼ・
+		// 最大値を取得（0の場合は1にして除算エラーを避ける）
 		const maxCount = Math.max(...data.map(d => d.count), 1);
 
 		for (const { date, count } of data) {
 			const cell = heatmap.createDiv({ cls: 'timeline-heatmap-cell' });
 
-			// 蠑ｷ蠎ｦ繝ｬ繝吶Ν・・-4・・
+			// 強度レベル（0-4）
 			let level = 0;
 			if (count > 0) {
 				const ratio = count / maxCount;
@@ -688,7 +688,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			}
 			cell.addClass(`timeline-heatmap-level-${level}`);
 
-			// 繝・・繝ｫ繝√ャ繝・
+			// ツールチップ
 			const dateObj = new Date(date);
 			const dayStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 			cell.setAttribute('aria-label', `${dayStr}: ${count} reviews`);
@@ -697,18 +697,18 @@ export class TimelineSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 繝輔ぃ繧､繝ｫ繧ｿ繧､繝怜挨邨ｱ險医ｒ謠冗判
+	 * ファイルタイプ別統計を描画
 	 */
 	private renderFileTypeBreakdown(container: HTMLElement, breakdown: Record<string, number>): void {
 		const grid = container.createDiv({ cls: 'timeline-stats-type-grid' });
 
 		const types: { key: string; icon: string; label: string }[] = [
-			{ key: 'markdown', icon: '統', label: 'Markdown' },
-			{ key: 'text', icon: '塔', label: 'Text' },
+			{ key: 'markdown', icon: '統', label: 'Markdown' },
+			{ key: 'text', icon: '塔', label: 'Text' },
 			{ key: 'image', icon: 'IMG', label: 'Image' },
-			{ key: 'pdf', icon: '塘', label: 'PDF' },
-			{ key: 'audio', icon: '七', label: 'Audio' },
-			{ key: 'video', icon: '汐', label: 'Video' },
+			{ key: 'pdf', icon: '塘', label: 'PDF' },
+			{ key: 'audio', icon: '七', label: 'Audio' },
+			{ key: 'video', icon: '汐', label: 'Video' },
 		];
 
 		for (const { key, icon, label } of types) {
@@ -723,7 +723,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * 隧ｳ邏ｰ陦後ｒ菴懈・
+	 * 詳細行を作成
 	 */
 	private createDetailRow(container: HTMLElement, label: string, value: string): void {
 		const row = container.createDiv({ cls: 'timeline-stats-detail-row' });
@@ -731,8 +731,3 @@ export class TimelineSettingTab extends PluginSettingTab {
 		row.createSpan({ cls: 'timeline-stats-detail-value', text: value });
 	}
 }
-
-
-
-
-

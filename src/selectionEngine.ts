@@ -1,4 +1,4 @@
-﻿// Timeline Note Launcher - Selection Engine
+// Timeline Note Launcher - Selection Engine
 import { SelectionMode, CandidateCard, PluginSettings } from './types';
 
 export interface SelectionResult {
@@ -8,8 +8,10 @@ export interface SelectionResult {
 }
 
 /**
- * 驕ｸ謚槭お繝ｳ繧ｸ繝ｳ
- * 蜈･蜉幢ｼ壼呵｣懊き繝ｼ繝会ｼ玖ｨｭ螳・ * 蜃ｺ蜉幢ｼ夐∈謚槭＆繧後◆繝代せ驟榊・・狗ｵｱ險・ */
+ * 選択エンジン
+ * 入力：候補カード、設定
+ * 出力：選択されたパス配列（統計）
+ */
 export function selectCards(
 	cards: CandidateCard[],
 	mode: SelectionMode,
@@ -19,7 +21,7 @@ export function selectCards(
 ): SelectionResult {
 	const maxCards = settings.maxCards || 50;
 
-	// 蜊倅ｸ繝代せ縺ｧ邨ｱ險医ｒ髮・ｨ・
+	// 単一パスで統計を排除
 	let newCount = 0;
 	let dueCount = 0;
 	for (const c of cards) {
@@ -92,24 +94,25 @@ function calculateRandomWeight(card: CandidateCard, now: number): number {
 	return weight;
 }
 /**
- * 繝｢繝ｼ繝隠: 蜿､縺募━蜈医Λ繝ｳ繝繝
- * lastReviewedAt 縺悟商縺・⊇縺ｩ驥阪∩竊代｝inned 縺ｫ蜉轤ｹ
+ * モードB: 古い優先ランダム
+ * lastReviewedAt が古いほど重み大、pinned に加点
  */
 function selectAgePriority(cards: CandidateCard[]): CandidateCard[] {
 	const now = Date.now();
 
-	// 驥阪∩莉倥″繧ｫ繝ｼ繝蛾・蛻励ｒ菴懈・
+	// 重み付きカード配列を作成
 	const weighted = cards.map(card => ({
 		card,
 		weight: calculateAgeWeight(card, now),
 	}));
 
-	// 驥阪∩莉倥″繝ｩ繝ｳ繝繝驕ｸ謚・
+	// 重み付きランダム選択
 	return weightedShuffle(weighted).map(w => w.card);
 }
 
 /**
- * 繝｢繝ｼ繝韻: SRS・磯俣髫泌渚蠕ｩ・・ */
+ * モードC: SRS（間隔反復）
+ */
 function selectSRS(
 	cards: CandidateCard[],
 	settings: PluginSettings,
@@ -118,7 +121,7 @@ function selectSRS(
 	newCount: number,
 	dueCount: number
 ): SelectionResult {
-	// 蜊倅ｸ繝代せ縺ｧ蛻・｡・
+	// 単一パスで分類
 	const dueCards: CandidateCard[] = [];
 	const newCards: CandidateCard[] = [];
 	const futureCards: CandidateCard[] = [];
@@ -128,28 +131,28 @@ function selectSRS(
 		else futureCards.push(c);
 	}
 
-	// 谿九ｊ縺ｮ譌･谺｡蛻ｶ髯舌ｒ險育ｮ・
+	// 残りの日次制限を計算
 	const remainingNew = Math.max(0, settings.newCardsPerDay - dailyNewReviewed);
 	const remainingReview = Math.max(0, settings.reviewCardsPerDay - dailyReviewedCount);
 
-	// 1. 譛滄剞蛻ｰ譚･繧ｫ繝ｼ繝会ｼ域悄髯舌′蜿､縺・・ｼ・
+	// 1. 期限到来カード（期限が古い順）
 	const sortedDue = [...dueCards].sort((a, b) => {
 		const aNext = a.nextReviewAt ?? 0;
 		const bNext = b.nextReviewAt ?? 0;
 		return aNext - bNext;
 	});
 
-	// 2. 譁ｰ隕上き繝ｼ繝会ｼ・AML priority閠・・縲√Λ繝ｳ繝繝・・
+	// 2. 新規カード（YAML priority順、ランダム）
 	const sortedNew = [...newCards].sort((a, b) => {
-		// YAML縺ｮ蜆ｪ蜈亥ｺｦ縺碁ｫ倥＞繧ゅ・繧貞・縺ｫ
+		// YAMLの優先度が高いものを先に
 		const aPriority = a.yamlPriority ?? 0;
 		const bPriority = b.yamlPriority ?? 0;
 		if (aPriority !== bPriority) return bPriority - aPriority;
-		// 蜷後§縺ｪ繧峨Λ繝ｳ繝繝
+		// 同じならランダム
 		return Math.random() - 0.5;
 	});
 
-	// 3. 蟆・擂縺ｮ繧ｫ繝ｼ繝会ｼ域ｬ｡蝗槭Ξ繝薙Η繝ｼ譌･縺瑚ｿ代＞鬆・ｼ・
+	// 3. 将来のカード（次回レビュー日が近い順）
 	const sortedFuture = [...futureCards].sort((a, b) => {
 		const aNext = a.nextReviewAt ?? Infinity;
 		const bNext = b.nextReviewAt ?? Infinity;
@@ -223,11 +226,12 @@ function selectSRS(
 }
 
 /**
- * 蜿､縺暮㍾縺ｿ繧定ｨ育ｮ・ */
+ * 古さ重みを計算
+ */
 function calculateAgeWeight(card: CandidateCard, now: number): number {
 	let weight = 1;
 
-	// 蜿､縺輔↓繧医ｋ驥阪∩・域悴繝ｬ繝薙Η繝ｼ縺ｯ譛螟ｧ驥阪∩・・
+	// 古さによる重み（未レビューは最大重み）
 	if (card.lastReviewedAt === null) {
 		// 未レビュー: 作成日からの経過日数で重み付け
 		if (card.createdAt !== null) {
@@ -238,19 +242,19 @@ function calculateAgeWeight(card: CandidateCard, now: number): number {
 		}
 	} else {
 		const daysSinceReview = (now - card.lastReviewedAt) / (1000 * 60 * 60 * 24);
-		weight += Math.min(daysSinceReview, 100);  // 譛螟ｧ100譌･蛻・
+		weight += Math.min(daysSinceReview, 100);  // 最大100日分
 	}
 
-	// pinned蜉轤ｹ
+	// pinned加点
 	if (card.pinned) {
 		weight += 20;
 	}
 
-	// 繝ｬ繝薙Η繝ｼ蝗樊焚縺悟ｰ代↑縺・⊇縺ｩ蜉轤ｹ
+	// レビュー回数が少ないほど加点
 	const reviewBonus = Math.max(0, 10 - card.reviewCount);
 	weight += reviewBonus;
 
-	// YAML priority蜉轤ｹ
+	// YAML priority加点
 	if (card.yamlPriority !== null) {
 		weight += card.yamlPriority * 10;
 	}
@@ -259,19 +263,18 @@ function calculateAgeWeight(card: CandidateCard, now: number): number {
 }
 
 /**
- * 驥阪∩莉倥″繧ｷ繝｣繝・ヵ繝ｫ・・(n log n)・・ * Exponential sorting繧｢繝ｫ繧ｴ繝ｪ繧ｺ繝: 蜷・い繧､繝・Β縺ｫ random^(1/weight) 縺ｧ繧ｽ繝ｼ繝医く繝ｼ繧貞牡繧雁ｽ薙※縲・ * 繧ｽ繝ｼ繝医☆繧九％縺ｨ縺ｧ驥阪∩莉倥″繝ｩ繝ｳ繝繝驕ｸ謚槭ｒ螳溽樟
+ * 重み付きシャッフル（O(n log n)）
+ * Exponential sortingアルゴリズム: 各アイテムに random^(1/weight) でソートキーを割り当て、
+ * ソートすることで重み付きランダム選択を実現
  */
 function weightedShuffle<T>(items: { card: T; weight: number }[]): { card: T; weight: number }[] {
-	// 蜷・い繧､繝・Β縺ｫ繧ｽ繝ｼ繝医く繝ｼ繧剃ｻ倅ｸ弱＠縺ｦ繧ｽ繝ｼ繝・
+	// 各アイテムにソートキーを付与してソート
 	return items
 		.map(item => ({
 			item,
-			// 驥阪∩縺悟､ｧ縺阪＞縺ｻ縺ｩ縲√％縺ｮ蛟､縺悟､ｧ縺阪￥縺ｪ繧翫ｄ縺吶＞
+			// 重みが大きいほど、この値が大きくなりやすい
 			sortKey: Math.pow(Math.random(), 1 / Math.max(item.weight, 0.001)),
 		}))
 		.sort((a, b) => b.sortKey - a.sortKey)
 		.map(x => x.item);
 }
-
-
-

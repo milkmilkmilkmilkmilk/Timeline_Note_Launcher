@@ -5,5 +5,9 @@
       "Bash(git -C /mnt/c/Users/usumi/Documents/Obsidian_Vault/.obsidian/plugins/Timeline_Note_Launcher status)",
       "Bash(npm run lint)"
     ]
-  }
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "teammateMode": "tmux"
 }
