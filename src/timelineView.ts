@@ -133,6 +133,8 @@ export class TimelineView extends ItemView {
 	private isLoadingMore: boolean = false;
 	private scrollHandler: () => void;
 	private listEl: HTMLElement | null = null;
+	// PDF遅延レンダリング用：DOM接続後に処理するコンテナ→カードデータの対応
+	private pendingPdfEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean }> = new Map();
 	// プルトゥリフレッシュ用
 	private pullToRefreshStartY: number = 0;
 	private pullToRefreshTriggered: boolean = false;
@@ -368,6 +370,7 @@ export class TimelineView extends ItemView {
 		this.lastCardStateKeys = newStateKeys;
 
 		// 古いレンダリングをクリーンアップ
+		this.pendingPdfEmbeds.clear();
 		this.renderComponent.unload();
 		this.renderComponent = new Component();
 		this.renderComponent.load();
@@ -472,6 +475,8 @@ export class TimelineView extends ItemView {
 		);
 		this.cardElements = elements;
 		this.listEl.appendChild(fragment);
+		// DOM接続後にPDF埋め込みを実行
+		await this.activatePendingPdfEmbeds();
 
 		// 下部フッター
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
@@ -1271,7 +1276,7 @@ export class TimelineView extends ItemView {
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
-				await this.renderPdfCardPreview(thumbnailEl, card, false);
+				this.pendingPdfEmbeds.set(thumbnailEl, { card, isGridMode: false });
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-thumbnail-ipynb' });
@@ -1512,7 +1517,7 @@ export class TimelineView extends ItemView {
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
 				thumbnailEl.addClass('timeline-grid-card-pdf-embed');
-				await this.renderPdfCardPreview(thumbnailEl, card, true);
+				this.pendingPdfEmbeds.set(thumbnailEl, { card, isGridMode: true });
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				thumbnailEl.addClass('timeline-grid-card-thumbnail-ipynb');
@@ -1681,27 +1686,33 @@ export class TimelineView extends ItemView {
 		}
 
 		this.createPdfOpenButton(container, card);
-
-		const checkTimeout = window.setTimeout(() => {
-			if (!container.isConnected) return;
-			this.applyInitialPdfZoom(embedHost);
-			const currentPdfEl = this.findRenderedPdfElement(embedHost);
-			if (!currentPdfEl || !this.hasVisibleSize(currentPdfEl)) {
-				this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
-			}
-		}, 1500);
-		this.register(() => { window.clearTimeout(checkTimeout); });
 	}
 
 	/**
 	 * 埋め込みPDF要素の描画可否を確認
 	 */
 	private async ensurePdfRendered(embedHost: HTMLElement): Promise<boolean> {
-		await this.waitForAnimationFrame();
-		await this.waitForAnimationFrame();
+		const maxAttempts = 5;
+		const intervalMs = 200;
+		for (let i = 0; i < maxAttempts; i++) {
+			await new Promise<void>(r => window.setTimeout(r, intervalMs));
+			if (!embedHost.isConnected) return false;
+			const pdfEl = this.findRenderedPdfElement(embedHost);
+			if (pdfEl && this.hasVisibleSize(pdfEl)) return true;
+		}
+		return false;
+	}
 
-		const pdfEl = this.findRenderedPdfElement(embedHost);
-		return !!pdfEl && this.hasVisibleSize(pdfEl);
+	/**
+	 * DOM接続済みのPDFプレースホルダーに対して埋め込みを実行
+	 */
+	private async activatePendingPdfEmbeds(): Promise<void> {
+		const entries = Array.from(this.pendingPdfEmbeds.entries());
+		this.pendingPdfEmbeds.clear();
+		for (const [container, { card, isGridMode }] of entries) {
+			if (!container.isConnected) continue;
+			await this.renderPdfCardPreview(container, card, isGridMode);
+		}
 	}
 
 	/**
@@ -2082,6 +2093,8 @@ export class TimelineView extends ItemView {
 		);
 		this.cardElements.push(...moreElements);
 		this.listEl.appendChild(moreFragment);
+		// DOM接続後にPDF埋め込みを実行
+		await this.activatePendingPdfEmbeds();
 
 		this.displayedCount = endIndex;
 		this.isLoadingMore = false;
