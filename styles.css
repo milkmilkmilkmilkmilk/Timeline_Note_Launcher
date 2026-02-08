@@ -2469,13 +2469,15 @@
 	position: relative;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 6px;
-	overflow: hidden;
+	overflow: auto;
 	background: var(--background-primary);
 }
 
 .timeline-pdf-embed-host {
 	width: 100%;
 	height: 100%;
+	display: flex;
+	justify-content: center;
 }
 
 .timeline-card-pdf-embed embed,
@@ -2588,7 +2590,7 @@
 .timeline-grid-card-pdf-embed {
 	position: relative;
 	background: var(--background-primary);
-	overflow: hidden;
+	overflow: auto;
 	aspect-ratio: 3/4;
 	min-height: 400px;
 }

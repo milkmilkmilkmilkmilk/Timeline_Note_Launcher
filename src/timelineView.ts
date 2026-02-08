@@ -1251,35 +1251,37 @@ export class TimelineView extends ItemView {
 			});
 		});
 
-		// プレビュー
-		const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
-		if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
-			// 脚注記法をエスケープ（プレビューでは参照先がないため）
-			const previewText = card.preview.replace(/\[\^/g, '\\[^');
-			// マークダウンをレンダリング
-			await MarkdownRenderer.render(
-				this.app,
-				previewText,
-				previewEl,
-				card.path,
-				this.renderComponent
-			);
-			// ipynbの場合はクラスを追加
-			if (card.fileType === 'ipynb') {
-				previewEl.addClass('timeline-card-preview-ipynb');
+		// プレビュー（PDFはサムネイル埋め込みのみ表示するためスキップ）
+		if (card.fileType !== 'pdf') {
+			const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
+			if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
+				// 脚注記法をエスケープ（プレビューでは参照先がないため）
+				const previewText = card.preview.replace(/\[\^/g, '\\[^');
+				// マークダウンをレンダリング
+				await MarkdownRenderer.render(
+					this.app,
+					previewText,
+					previewEl,
+					card.path,
+					this.renderComponent
+				);
+				// ipynbの場合はクラスを追加
+				if (card.fileType === 'ipynb') {
+					previewEl.addClass('timeline-card-preview-ipynb');
+				}
+			} else {
+				// 非マークダウンはプレーンテキスト表示
+				previewEl.addClass('timeline-card-preview-file');
+				previewEl.createSpan({
+					cls: 'timeline-file-preview-text',
+					text: card.preview,
+				});
+				// 拡張子バッジ
+				previewEl.createSpan({
+					cls: 'timeline-file-extension',
+					text: `.${card.extension}`,
+				});
 			}
-		} else {
-			// 非マークダウンはプレーンテキスト表示
-			previewEl.addClass('timeline-card-preview-file');
-			previewEl.createSpan({
-				cls: 'timeline-file-preview-text',
-				text: card.preview,
-			});
-			// 拡張子バッジ
-			previewEl.createSpan({
-				cls: 'timeline-file-extension',
-				text: `.${card.extension}`,
-			});
 		}
 
 		// サムネイル画像 / PDF・Excalidraw埋め込み（マークダウンはMarkdownRenderer内で位置通りに表示されるためスキップ）
