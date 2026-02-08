@@ -11,6 +11,10 @@ export class CommentModal extends Modal {
 	private textArea: HTMLTextAreaElement;
 	private saveBtn: HTMLButtonElement;
 	private noteContent: string = '';
+	// ドラッグ状態
+	private isDragging: boolean = false;
+	private dragOffsetX: number = 0;
+	private dragOffsetY: number = 0;
 
 	constructor(app: App, plugin: TimelineNoteLauncherPlugin, file: TFile) {
 		super(app);
@@ -23,11 +27,16 @@ export class CommentModal extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass('timeline-comment-modal');
 
-		// タイトル
-		contentEl.createEl('h3', {
+		// タイトル（ドラッグハンドル）
+		const titleEl = contentEl.createEl('h3', {
 			text: `コメントを追加: ${this.file.basename}`,
-			cls: 'timeline-comment-modal-title',
+			cls: 'timeline-comment-modal-title timeline-comment-modal-drag-handle',
 		});
+
+		// デスクトップのみドラッグ有効化
+		if (!Platform.isMobile) {
+			this.setupDrag(titleEl);
+		}
 
 		// ノートプレビューセクション
 		const previewSection = contentEl.createDiv({ cls: 'timeline-comment-preview-section' });
@@ -128,6 +137,45 @@ export class CommentModal extends Modal {
 
 		// フォーカスをテキストエリアに移動
 		this.textArea.focus();
+	}
+
+	private setupDrag(handleEl: HTMLElement): void {
+		const modalEl = this.modalEl;
+
+		const onMouseMove = (e: MouseEvent): void => {
+			if (!this.isDragging) return;
+			const x = e.clientX - this.dragOffsetX;
+			const y = e.clientY - this.dragOffsetY;
+			modalEl.style.left = `${x}px`;
+			modalEl.style.top = `${y}px`;
+		};
+
+		const onMouseUp = (): void => {
+			this.isDragging = false;
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+		};
+
+		handleEl.addEventListener('mousedown', (e: MouseEvent) => {
+			// テキスト選択でなくドラッグ操作
+			if (e.button !== 0) return;
+			e.preventDefault();
+
+			// 初回ドラッグ時: 中央配置からposition固定に切替
+			const rect = modalEl.getBoundingClientRect();
+			if (!modalEl.hasClass('timeline-modal-dragged')) {
+				modalEl.style.left = `${rect.left}px`;
+				modalEl.style.top = `${rect.top}px`;
+				modalEl.addClass('timeline-modal-dragged');
+			}
+
+			this.isDragging = true;
+			this.dragOffsetX = e.clientX - rect.left;
+			this.dragOffsetY = e.clientY - rect.top;
+
+			document.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('mouseup', onMouseUp);
+		});
 	}
 
 	onClose(): void {

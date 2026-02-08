@@ -65,9 +65,11 @@ export class QuoteNoteModal extends Modal {
 				text: '追加',
 				cls: 'timeline-quote-note-add-btn',
 			});
-			// mousedownを使用して、クリック時に選択が解除される前に処理する
-			addBtn.addEventListener('mousedown', (e) => {
-				e.preventDefault(); // 選択解除を防ぐ
+			// pointerdownを使用: タッチ/マウス両方で選択が解除される前に処理
+			addBtn.addEventListener('pointerdown', (e) => {
+				e.preventDefault();
+				// DOMから直接選択テキストを取得（selectionchangeに頼らない）
+				this.captureSelectionFromDOM();
 				this.addCurrentSelection();
 			});
 		} else {
@@ -245,6 +247,19 @@ export class QuoteNoteModal extends Modal {
 		} else {
 			this.selectionPreviewEl.textContent = '選択中: （テキストを選択してください）';
 			this.selectionPreviewEl.removeClass('has-selection');
+		}
+	}
+
+	/**
+	 * DOMから直接選択テキストを取得してcurrentSelectionに反映
+	 * selectionchangeのタイミング問題を回避するため、ボタン操作時に呼び出す
+	 */
+	private captureSelectionFromDOM(): void {
+		const selection = window.getSelection();
+		if (!selection || selection.isCollapsed) return;
+		const range = selection.getRangeAt(0);
+		if (this.previewEl?.contains(range.commonAncestorContainer)) {
+			this.currentSelection = selection.toString();
 		}
 	}
 

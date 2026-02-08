@@ -1446,6 +1446,23 @@
 	max-width: 600px;
 }
 
+/* ドラッグハンドル */
+.timeline-comment-modal-drag-handle {
+	cursor: grab;
+	user-select: none;
+}
+
+.timeline-comment-modal-drag-handle:active {
+	cursor: grabbing;
+}
+
+/* ドラッグ中: 中央配置を解除してposition固定 */
+.timeline-modal-dragged {
+	position: fixed;
+	margin: 0;
+	transform: none;
+}
+
 .timeline-comment-modal-title {
 	margin: 0 0 16px 0;
 	font-size: 18px;
