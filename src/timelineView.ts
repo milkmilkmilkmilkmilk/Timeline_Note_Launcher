@@ -124,7 +124,7 @@ export class TimelineView extends ItemView {
 	private keydownHandler: (e: KeyboardEvent) => void;
 	// フィルタ状態
 	private searchQuery: string = '';
-	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'excalidraw', 'other']);
+	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'excalidraw', 'canvas', 'other']);
 	private selectedTags: Set<string> = new Set();
 	private searchDebounceTimer: number | null = null;
 	// 日付範囲フィルタ
@@ -147,7 +147,7 @@ export class TimelineView extends ItemView {
 	private scrollHandler: () => void;
 	private listEl: HTMLElement | null = null;
 	// 遅延レンダリング用：DOM接続後に処理するコンテナ→カードデータの対応（PDF/Excalidraw）
-	private pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' }> = new Map();
+	private pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }> = new Map();
 	// プルトゥリフレッシュ用
 	private pullToRefreshStartY: number = 0;
 	private pullToRefreshTriggered: boolean = false;
@@ -738,6 +738,7 @@ export class TimelineView extends ItemView {
 			{ type: 'office', icon: '📊', label: 'Office' },
 			{ type: 'ipynb', icon: '🐍', label: 'Jupyter' },
 			{ type: 'excalidraw', icon: '🎨', label: 'Excalidraw' },
+			{ type: 'canvas', icon: '🔲', label: 'Canvas' },
 		];
 
 		for (const ft of fileTypes) {
@@ -1251,8 +1252,8 @@ export class TimelineView extends ItemView {
 			});
 		});
 
-		// プレビュー（PDFはサムネイル埋め込みのみ表示するためスキップ）
-		if (card.fileType !== 'pdf') {
+		// プレビュー（PDF/Canvas/Officeはサムネイル埋め込みのみ表示するためスキップ）
+		if (card.fileType !== 'pdf' && card.fileType !== 'canvas' && card.fileType !== 'office') {
 			const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
 			if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
 				// 脚注記法をエスケープ（プレビューでは参照先がないため）
@@ -1292,6 +1293,12 @@ export class TimelineView extends ItemView {
 			} else if (card.fileType === 'excalidraw') {
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-excalidraw-embed' });
 				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'excalidraw' });
+			} else if (card.fileType === 'canvas') {
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-canvas-embed' });
+				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'canvas' });
+			} else if (card.fileType === 'office') {
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-office-embed' });
+				this.renderOfficeFallback(thumbnailEl, card, false);
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-thumbnail-ipynb' });
@@ -1550,6 +1557,12 @@ export class TimelineView extends ItemView {
 			} else if (card.fileType === 'excalidraw') {
 				thumbnailEl.addClass('timeline-grid-card-excalidraw-embed');
 				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: true, embedType: 'excalidraw' });
+			} else if (card.fileType === 'canvas') {
+				thumbnailEl.addClass('timeline-grid-card-canvas-embed');
+				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: true, embedType: 'canvas' });
+			} else if (card.fileType === 'office') {
+				thumbnailEl.addClass('timeline-grid-card-office-embed');
+				this.renderOfficeFallback(thumbnailEl, card, true);
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				thumbnailEl.addClass('timeline-grid-card-thumbnail-ipynb');
@@ -1826,6 +1839,8 @@ export class TimelineView extends ItemView {
 			if (!container.isConnected) continue;
 			if (embedType === 'excalidraw') {
 				await this.renderExcalidrawCardPreview(container, card, isGridMode);
+			} else if (embedType === 'canvas') {
+				await this.renderCanvasCardPreview(container, card, isGridMode);
 			} else {
 				await this.renderPdfCardPreview(container, card, isGridMode);
 			}
@@ -1876,7 +1891,7 @@ export class TimelineView extends ItemView {
 				if (target instanceof HTMLEmbedElement || target instanceof HTMLIFrameElement) {
 					const currentSrc = target.getAttribute('src');
 					if (!currentSrc) continue;
-					const zoomedSrc = this.withPdfZoom100(currentSrc);
+					const zoomedSrc = this.withPdfFitWidth(currentSrc);
 					if (zoomedSrc !== currentSrc) {
 						target.setAttribute('src', zoomedSrc);
 					}
@@ -1886,7 +1901,7 @@ export class TimelineView extends ItemView {
 				if (target instanceof HTMLObjectElement) {
 					const currentData = target.getAttribute('data');
 					if (!currentData) continue;
-					const zoomedData = this.withPdfZoom100(currentData);
+					const zoomedData = this.withPdfFitWidth(currentData);
 					if (zoomedData !== currentData) {
 						target.setAttribute('data', zoomedData);
 					}
@@ -1896,9 +1911,9 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * URLフラグメントに zoom=100 を適用
+	 * URLフラグメントに view=FitH を適用（ページ幅をビューア幅に合わせる）
 	 */
-	private withPdfZoom100(url: string): string {
+	private withPdfFitWidth(url: string): string {
 		const [base, hash = ''] = url.split('#', 2);
 		const tokens = hash
 			.replace(/^\?/, '')
@@ -1906,17 +1921,19 @@ export class TimelineView extends ItemView {
 			.map(token => token.trim())
 			.filter(token => token.length > 0);
 
-		let hasZoom = false;
-		const nextTokens = tokens.map((token) => {
-			if (token.startsWith('zoom=')) {
-				hasZoom = true;
-				return 'zoom=100';
-			}
-			return token;
-		});
+		let hasView = false;
+		const nextTokens = tokens
+			.filter(token => !token.startsWith('zoom='))
+			.map((token) => {
+				if (token.startsWith('view=')) {
+					hasView = true;
+					return 'view=FitH';
+				}
+				return token;
+			});
 
-		if (!hasZoom) {
-			nextTokens.unshift('zoom=100');
+		if (!hasView) {
+			nextTokens.unshift('view=FitH');
 		}
 
 		return `${base}#${nextTokens.join('&')}`;
@@ -2041,6 +2058,162 @@ export class TimelineView extends ItemView {
 		const openBtn = container.createEl('button', {
 			cls: 'timeline-excalidraw-open-btn',
 			text: '🎨 open',
+		});
+		openBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void this.openNote(card);
+		});
+	}
+
+	/**
+	 * Canvasカードプレビューを描画
+	 */
+	private async renderCanvasCardPreview(
+		container: HTMLElement,
+		card: TimelineCard,
+		isGridMode: boolean
+	): Promise<void> {
+		container.addEventListener('click', (e) => {
+			e.stopPropagation();
+		});
+
+		const filePath = card.firstImagePath;
+		if (!filePath) {
+			this.renderCanvasFallback(container, card, 'Canvas preview failed.', isGridMode);
+			return;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		if (!(file instanceof TFile)) {
+			this.renderCanvasFallback(container, card, 'Canvas preview failed.', isGridMode);
+			return;
+		}
+
+		const embedHost = container.createDiv({ cls: 'timeline-canvas-embed-host' });
+		try {
+			await MarkdownRenderer.render(
+				this.app,
+				`![[${file.path}]]`,
+				embedHost,
+				card.path,
+				this.renderComponent
+			);
+		} catch (error: unknown) {
+			console.error('Failed to render Canvas preview:', error);
+			this.renderCanvasFallback(container, card, 'Canvas preview failed.', isGridMode);
+			return;
+		}
+
+		const renderedOk = await this.ensureCanvasRendered(embedHost);
+		if (!renderedOk) {
+			this.renderCanvasFallback(container, card, 'Canvas plugin not available or rendering failed.', isGridMode);
+			return;
+		}
+
+		this.createCanvasOpenButton(container, card);
+	}
+
+	/**
+	 * Canvas埋め込み要素の描画完了をポーリングで確認
+	 */
+	private async ensureCanvasRendered(embedHost: HTMLElement): Promise<boolean> {
+		const maxAttempts = 10;
+		const intervalMs = 300;
+		for (let i = 0; i < maxAttempts; i++) {
+			await new Promise<void>(r => window.setTimeout(r, intervalMs));
+			if (!embedHost.isConnected) return false;
+			// Canvasが描画する .canvas-node 要素または .internal-embed を探す
+			const canvasEl = embedHost.querySelector('.canvas-node, .canvas, .internal-embed');
+			if (canvasEl instanceof HTMLElement && this.hasVisibleSize(canvasEl)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Canvasプレビュー失敗時のフォールバックUI
+	 */
+	private renderCanvasFallback(
+		container: HTMLElement,
+		card: TimelineCard,
+		message: string,
+		isGridMode: boolean
+	): void {
+		container.empty();
+
+		const fallbackEl = container.createDiv({ cls: 'timeline-canvas-fallback' });
+		fallbackEl.addClass(isGridMode ? 'timeline-canvas-fallback-grid' : 'timeline-canvas-fallback-list');
+		fallbackEl.createDiv({ cls: 'timeline-canvas-fallback-icon', text: '🔲' });
+		const fileName = card.firstImagePath?.split('/').pop() ?? 'Canvas';
+		fallbackEl.createDiv({ cls: 'timeline-canvas-fallback-name', text: fileName });
+		fallbackEl.createDiv({ cls: 'timeline-canvas-fallback-hint', text: message });
+
+		this.createCanvasOpenButton(container, card);
+	}
+
+	/**
+	 * Canvasオープンボタンを作成
+	 */
+	private createCanvasOpenButton(container: HTMLElement, card: TimelineCard): void {
+		const openBtn = container.createEl('button', {
+			cls: 'timeline-canvas-open-btn',
+			text: '🔲 open',
+		});
+		openBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void this.openNote(card);
+		});
+	}
+
+	/**
+	 * Officeファイルの拡張子からサブタイプアイコンを返す
+	 */
+	private getOfficeSubIcon(extension: string): string {
+		const ext = extension.toLowerCase();
+		if (ext.startsWith('doc')) return '📝';
+		if (ext.startsWith('xls')) return '📊';
+		if (ext.startsWith('ppt')) return '📽️';
+		return '📄';
+	}
+
+	/**
+	 * Officeファイルの拡張子から種別ラベルを返す
+	 */
+	private getOfficeTypeLabel(extension: string): string {
+		const ext = extension.toLowerCase();
+		if (ext.startsWith('doc')) return 'Word document';
+		if (ext.startsWith('xls')) return 'Spreadsheet';
+		if (ext.startsWith('ppt')) return 'Presentation';
+		return 'Office document';
+	}
+
+	/**
+	 * OfficeファイルのフォールバックUIを構築
+	 */
+	private renderOfficeFallback(
+		container: HTMLElement,
+		card: TimelineCard,
+		isGridMode: boolean
+	): void {
+		const fallbackEl = container.createDiv({ cls: 'timeline-office-fallback' });
+		fallbackEl.addClass(isGridMode ? 'timeline-office-fallback-grid' : 'timeline-office-fallback-list');
+		const icon = this.getOfficeSubIcon(card.extension);
+		fallbackEl.createDiv({ cls: 'timeline-office-fallback-icon', text: icon });
+		const fileName = card.path.split('/').pop() ?? card.title;
+		fallbackEl.createDiv({ cls: 'timeline-office-fallback-name', text: fileName });
+		const label = this.getOfficeTypeLabel(card.extension);
+		fallbackEl.createDiv({ cls: 'timeline-office-fallback-hint', text: label });
+
+		this.createOfficeOpenButton(container, card);
+	}
+
+	/**
+	 * Officeオープンボタンを作成
+	 */
+	private createOfficeOpenButton(container: HTMLElement, card: TimelineCard): void {
+		const icon = this.getOfficeSubIcon(card.extension);
+		const openBtn = container.createEl('button', {
+			cls: 'timeline-office-open-btn',
+			text: `${icon} open`,
 		});
 		openBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -2220,6 +2393,7 @@ export class TimelineView extends ItemView {
 			case 'office': return '📊';
 			case 'ipynb': return '🐍';
 			case 'excalidraw': return '🎨';
+			case 'canvas': return '🔲';
 			default: return '📁';
 		}
 	}

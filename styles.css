@@ -2323,6 +2323,10 @@
 	color: #e76f00;
 }
 
+.timeline-badge-canvas {
+	color: #06b6d4;
+}
+
 .timeline-badge-other {
 	color: var(--text-muted);
 }
@@ -2358,6 +2362,10 @@
 
 .timeline-card-type-excalidraw {
 	border-left-color: #6965db;
+}
+
+.timeline-card-type-canvas {
+	border-left-color: #06b6d4;
 }
 
 .timeline-card-type-other {
@@ -2818,6 +2826,217 @@
 .timeline-excalidraw-fallback-hint {
 	font-size: 12px;
 	color: var(--text-faint);
+}
+
+/* ===== Canvas 埋め込み ===== */
+
+/* リスト表示のCanvas埋め込み */
+.timeline-card-canvas-embed {
+	position: relative;
+	width: 100%;
+	overflow: hidden;
+	border-radius: 8px;
+	min-height: 200px;
+}
+
+.timeline-card-canvas-embed .timeline-canvas-embed-host {
+	width: 100%;
+	pointer-events: none;
+}
+
+.timeline-card-canvas-embed .timeline-canvas-embed-host .internal-embed {
+	width: 100%;
+	display: block;
+}
+
+/* グリッド表示のCanvas埋め込み */
+.timeline-grid-card-canvas-embed {
+	position: relative;
+	background: var(--background-primary);
+	overflow: hidden;
+	border-radius: 8px 8px 0 0;
+	min-height: 200px;
+}
+
+.timeline-grid-card-canvas-embed .timeline-canvas-embed-host {
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+}
+
+.timeline-grid-card-canvas-embed .timeline-canvas-embed-host .internal-embed {
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
+/* Canvas オープンボタン */
+.timeline-canvas-open-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 4px 10px;
+	border: none;
+	background: var(--background-modifier-hover);
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--text-normal);
+	opacity: 0;
+	transition: opacity 0.15s ease, background 0.15s ease;
+	z-index: 10;
+}
+
+.timeline-card-canvas-embed:hover .timeline-canvas-open-btn,
+.timeline-grid-card-canvas-embed:hover .timeline-canvas-open-btn {
+	opacity: 1;
+}
+
+.timeline-canvas-open-btn:hover {
+	background: var(--interactive-accent);
+}
+
+@media (hover: none) {
+	.timeline-canvas-open-btn {
+		opacity: 1;
+	}
+}
+
+/* Canvasフォールバック表示 */
+.timeline-canvas-fallback {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 24px 16px;
+	background: var(--background-primary);
+	border-radius: 8px;
+	min-height: 160px;
+	box-sizing: border-box;
+}
+
+.timeline-canvas-fallback-grid {
+	border-radius: 0;
+	min-height: 240px;
+}
+
+.timeline-canvas-fallback-icon {
+	font-size: 48px;
+	line-height: 1;
+}
+
+.timeline-canvas-fallback-name {
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--text-normal);
+	max-width: 80%;
+	text-align: center;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.timeline-canvas-fallback-hint {
+	font-size: 12px;
+	color: var(--text-faint);
+}
+
+/* グリッド: Canvas全幅表示 */
+.timeline-grid .timeline-grid-card.timeline-card-type-canvas {
+	grid-column: 1 / -1;
+}
+
+/* ===== Office ファイル埋め込み ===== */
+
+/* リスト表示のOffice埋め込み */
+.timeline-card-office-embed {
+	position: relative;
+	width: 100%;
+	overflow: hidden;
+	border-radius: 8px;
+	min-height: 200px;
+}
+
+/* グリッド表示のOffice埋め込み */
+.timeline-grid-card-office-embed {
+	position: relative;
+	background: var(--background-primary);
+	overflow: hidden;
+	border-radius: 8px 8px 0 0;
+	min-height: 200px;
+}
+
+/* Officeフォールバック表示 */
+.timeline-office-fallback {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	height: 100%;
+	min-height: 200px;
+	padding: 16px;
+	background: var(--background-secondary);
+	border-radius: 6px;
+	color: var(--text-muted);
+	text-align: center;
+	box-sizing: border-box;
+}
+
+.timeline-office-fallback-grid {
+	border-radius: 0;
+	min-height: 240px;
+}
+
+.timeline-office-fallback-icon {
+	font-size: 48px;
+	line-height: 1;
+}
+
+.timeline-office-fallback-name {
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--text-normal);
+	max-width: 80%;
+	text-align: center;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.timeline-office-fallback-hint {
+	font-size: 12px;
+	color: var(--text-faint);
+}
+
+/* Office オープンボタン */
+.timeline-office-open-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 6px 12px;
+	background: rgba(0, 0, 0, 0.7);
+	color: white;
+	border: none;
+	border-radius: 6px;
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 500;
+	opacity: 1;
+	transition: background 0.15s ease;
+	z-index: 10;
+}
+
+.timeline-office-open-btn:hover {
+	background: #f97316;
+}
+
+@media (hover: none) {
+	.timeline-office-open-btn {
+		opacity: 1;
+	}
 }
 
 /* ===== UIテーマ: Classic（デフォルト） ===== */

@@ -236,6 +236,9 @@ const OFFICE_EXTENSIONS = ['pptx', 'ppt', 'docx', 'doc', 'xlsx', 'xls', 'odt', '
 /** Jupyter Notebook拡張子 */
 const IPYNB_EXTENSIONS = ['ipynb'];
 
+/** Canvas拡張子 */
+const CANVAS_EXTENSIONS = ['canvas'];
+
 /** キャッシュのTTL（ミリ秒） */
 const CACHE_TTL = 5000;
 
@@ -298,6 +301,7 @@ export function getFileType(extension: string): FileType {
 	if (VIDEO_EXTENSIONS.includes(ext)) return 'video';
 	if (OFFICE_EXTENSIONS.includes(ext)) return 'office';
 	if (IPYNB_EXTENSIONS.includes(ext)) return 'ipynb';
+	if (CANVAS_EXTENSIONS.includes(ext)) return 'canvas';
 	return 'other';
 }
 
@@ -878,6 +882,7 @@ export async function createTimelineCard(
 			break;
 		case 'office':
 			preview = `📊 ${file.extension.toUpperCase()} file`;
+			firstImagePath = file.path;  // フォールバック表示用
 			break;
 		case 'ipynb':
 			try {
@@ -895,6 +900,10 @@ export async function createTimelineCard(
 			break;
 		case 'excalidraw':
 			preview = '🎨 Excalidraw drawing';
+			firstImagePath = file.path;  // 埋め込み表示用
+			break;
+		case 'canvas':
+			preview = '📊 Canvas';
 			firstImagePath = file.path;  // 埋め込み表示用
 			break;
 		default:
@@ -1235,6 +1244,7 @@ export function recordReviewToHistory(
 			office: 0,
 			ipynb: 0,
 			excalidraw: 0,
+			canvas: 0,
 			other: 0,
 		},
 	};
@@ -1296,6 +1306,7 @@ export interface ReviewStatistics {
 		office: number;
 		ipynb: number;
 		excalidraw: number;
+		canvas: number;
 		other: number;
 	};
 	heatmapData: { date: string; count: number }[];
@@ -1341,6 +1352,7 @@ export function calculateStatistics(
 		office: 0,
 		ipynb: 0,
 		excalidraw: 0,
+		canvas: 0,
 		other: 0,
 	};
 

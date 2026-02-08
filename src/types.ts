@@ -25,7 +25,7 @@ export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
 export type ImageSizeMode = 'small' | 'medium' | 'large' | 'full';
 
 /** ファイルタイプ */
-export type FileType = 'markdown' | 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'office' | 'ipynb' | 'excalidraw' | 'other';
+export type FileType = 'markdown' | 'text' | 'image' | 'pdf' | 'audio' | 'video' | 'office' | 'ipynb' | 'excalidraw' | 'canvas' | 'other';
 
 /** ノートごとのレビューログ（data.json に保存） */
 export interface NoteReviewLog {
@@ -150,6 +150,7 @@ export interface DailyReviewHistory {
 			office: number;
 			ipynb: number;
 			excalidraw: number;
+			canvas: number;
 			other: number;
 		};
 	};
