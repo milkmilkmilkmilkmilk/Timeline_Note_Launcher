@@ -1,5 +1,5 @@
 // Timeline Note Launcher - Timeline View
-import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component, Menu, Modal } from 'obsidian';
+import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component, Menu, Modal, setIcon } from 'obsidian';
 import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE, FilterPreset } from './types';
 import { getNextIntervals, getBookmarkedPaths, getBookmarksPlugin, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
@@ -111,7 +111,7 @@ export class TimelineView extends ItemView {
 	private keydownHandler: (e: KeyboardEvent) => void;
 	// フィルタ状態
 	private searchQuery: string = '';
-	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'other']);
+	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'excalidraw', 'other']);
 	private selectedTags: Set<string> = new Set();
 	private searchDebounceTimer: number | null = null;
 	// 日付範囲フィルタ
@@ -133,8 +133,8 @@ export class TimelineView extends ItemView {
 	private isLoadingMore: boolean = false;
 	private scrollHandler: () => void;
 	private listEl: HTMLElement | null = null;
-	// PDF遅延レンダリング用：DOM接続後に処理するコンテナ→カードデータの対応
-	private pendingPdfEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean }> = new Map();
+	// 遅延レンダリング用：DOM接続後に処理するコンテナ→カードデータの対応（PDF/Excalidraw）
+	private pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' }> = new Map();
 	// プルトゥリフレッシュ用
 	private pullToRefreshStartY: number = 0;
 	private pullToRefreshTriggered: boolean = false;
@@ -370,7 +370,7 @@ export class TimelineView extends ItemView {
 		this.lastCardStateKeys = newStateKeys;
 
 		// 古いレンダリングをクリーンアップ
-		this.pendingPdfEmbeds.clear();
+		this.pendingEmbeds.clear();
 		this.renderComponent.unload();
 		this.renderComponent = new Component();
 		this.renderComponent.load();
@@ -476,7 +476,7 @@ export class TimelineView extends ItemView {
 		this.cardElements = elements;
 		this.listEl.appendChild(fragment);
 		// DOM接続後にPDF埋め込みを実行
-		await this.activatePendingPdfEmbeds();
+		await this.activatePendingEmbeds();
 
 		// 下部フッター
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
@@ -724,6 +724,7 @@ export class TimelineView extends ItemView {
 			{ type: 'video', icon: '🎬', label: 'Video' },
 			{ type: 'office', icon: '📊', label: 'Office' },
 			{ type: 'ipynb', icon: '🐍', label: 'Jupyter' },
+			{ type: 'excalidraw', icon: '🎨', label: 'Excalidraw' },
 		];
 
 		for (const ft of fileTypes) {
@@ -1130,16 +1131,14 @@ export class TimelineView extends ItemView {
 		const headerBookmarkBtn = headerEl.createEl('button', {
 			cls: `timeline-card-header-bookmark ${isBookmarked ? 'is-bookmarked' : ''}`,
 		});
-		headerBookmarkBtn.textContent = isBookmarked ? '★' : '☆';
+		setIcon(headerBookmarkBtn, 'bookmark');
 		headerBookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				headerBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 				// 同期：タイトル行のブックマークボタンも更新
 				const titleBookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
 				if (titleBookmarkBtn) {
-					titleBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 					titleBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 				}
 			});
@@ -1228,15 +1227,13 @@ export class TimelineView extends ItemView {
 			cls: `timeline-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
 			attr: { 'aria-label': isBookmarked ? 'Remove bookmark' : 'Add bookmark' },
 		});
-		bookmarkBtn.textContent = isBookmarked ? '★' : '☆';
+		setIcon(bookmarkBtn, 'bookmark');
 		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 				bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
 				// 同期：ヘッダーのブックマークボタンも更新
-				headerBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			});
 		});
@@ -1272,11 +1269,14 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// サムネイル画像 / PDF埋め込み（マークダウンはMarkdownRenderer内で位置通りに表示されるためスキップ）
+		// サムネイル画像 / PDF・Excalidraw埋め込み（マークダウンはMarkdownRenderer内で位置通りに表示されるためスキップ）
 		if (card.firstImagePath && card.fileType !== 'markdown') {
 			if (card.fileType === 'pdf') {
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
-				this.pendingPdfEmbeds.set(thumbnailEl, { card, isGridMode: false });
+				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'pdf' });
+			} else if (card.fileType === 'excalidraw') {
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-excalidraw-embed' });
+				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'excalidraw' });
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-thumbnail-ipynb' });
@@ -1517,7 +1517,10 @@ export class TimelineView extends ItemView {
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
 				thumbnailEl.addClass('timeline-grid-card-pdf-embed');
-				this.pendingPdfEmbeds.set(thumbnailEl, { card, isGridMode: true });
+				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: true, embedType: 'pdf' });
+			} else if (card.fileType === 'excalidraw') {
+				thumbnailEl.addClass('timeline-grid-card-excalidraw-embed');
+				this.pendingEmbeds.set(thumbnailEl, { card, isGridMode: true, embedType: 'excalidraw' });
 			} else if (card.firstImagePath.startsWith('data:')) {
 				// Base64 data URI（ipynbの出力画像など）
 				thumbnailEl.addClass('timeline-grid-card-thumbnail-ipynb');
@@ -1563,11 +1566,10 @@ export class TimelineView extends ItemView {
 		const bookmarkBtn = overlayEl.createEl('button', {
 			cls: `timeline-grid-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
 		});
-		bookmarkBtn.textContent = isBookmarked ? '★' : '☆';
+		setIcon(bookmarkBtn, 'bookmark');
 		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			});
 		});
@@ -1706,12 +1708,16 @@ export class TimelineView extends ItemView {
 	/**
 	 * DOM接続済みのPDFプレースホルダーに対して埋め込みを実行
 	 */
-	private async activatePendingPdfEmbeds(): Promise<void> {
-		const entries = Array.from(this.pendingPdfEmbeds.entries());
-		this.pendingPdfEmbeds.clear();
-		for (const [container, { card, isGridMode }] of entries) {
+	private async activatePendingEmbeds(): Promise<void> {
+		const entries = Array.from(this.pendingEmbeds.entries());
+		this.pendingEmbeds.clear();
+		for (const [container, { card, isGridMode, embedType }] of entries) {
 			if (!container.isConnected) continue;
-			await this.renderPdfCardPreview(container, card, isGridMode);
+			if (embedType === 'excalidraw') {
+				await this.renderExcalidrawCardPreview(container, card, isGridMode);
+			} else {
+				await this.renderPdfCardPreview(container, card, isGridMode);
+			}
 		}
 	}
 
@@ -1825,6 +1831,110 @@ export class TimelineView extends ItemView {
 		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-hint', text: message });
 
 		this.createPdfOpenButton(container, card);
+	}
+
+	/**
+	 * Excalidrawカードプレビューを描画
+	 */
+	private async renderExcalidrawCardPreview(
+		container: HTMLElement,
+		card: TimelineCard,
+		isGridMode: boolean
+	): Promise<void> {
+		container.addEventListener('click', (e) => {
+			e.stopPropagation();
+		});
+
+		const filePath = card.firstImagePath;
+		if (!filePath) {
+			this.renderExcalidrawFallback(container, card, 'Excalidraw preview failed.', isGridMode);
+			return;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		if (!(file instanceof TFile)) {
+			this.renderExcalidrawFallback(container, card, 'Excalidraw preview failed.', isGridMode);
+			return;
+		}
+
+		const embedHost = container.createDiv({ cls: 'timeline-excalidraw-embed-host' });
+		try {
+			await MarkdownRenderer.render(
+				this.app,
+				`![[${file.path}]]`,
+				embedHost,
+				card.path,
+				this.renderComponent
+			);
+		} catch (error: unknown) {
+			console.error('Failed to render Excalidraw preview:', error);
+			this.renderExcalidrawFallback(container, card, 'Excalidraw preview failed.', isGridMode);
+			return;
+		}
+
+		const renderedOk = await this.ensureExcalidrawRendered(embedHost);
+		if (!renderedOk) {
+			this.renderExcalidrawFallback(container, card, 'Excalidraw plugin not installed or rendering failed.', isGridMode);
+			return;
+		}
+
+		this.createExcalidrawOpenButton(container, card);
+	}
+
+	/**
+	 * Excalidraw埋め込み要素の描画完了をポーリングで確認
+	 */
+	private async ensureExcalidrawRendered(embedHost: HTMLElement): Promise<boolean> {
+		const maxAttempts = 10;
+		const intervalMs = 300;
+		for (let i = 0; i < maxAttempts; i++) {
+			await new Promise<void>(r => window.setTimeout(r, intervalMs));
+			if (!embedHost.isConnected) return false;
+			// Excalidrawプラグインが描画するSVG/canvas/.excalidraw-svg要素を探す
+			const excalidrawEl = embedHost.querySelector('svg, canvas, .excalidraw-svg, .excalidraw');
+			if (excalidrawEl instanceof HTMLElement && this.hasVisibleSize(excalidrawEl)) return true;
+			// SVGElementはHTMLElementではないので別途チェック
+			if (excalidrawEl instanceof SVGElement) {
+				const rect = excalidrawEl.getBoundingClientRect();
+				if (rect.width > 0 && rect.height > 0) return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Excalidrawプレビュー失敗時のフォールバックUI
+	 */
+	private renderExcalidrawFallback(
+		container: HTMLElement,
+		card: TimelineCard,
+		message: string,
+		isGridMode: boolean
+	): void {
+		container.empty();
+
+		const fallbackEl = container.createDiv({ cls: 'timeline-excalidraw-fallback' });
+		fallbackEl.addClass(isGridMode ? 'timeline-excalidraw-fallback-grid' : 'timeline-excalidraw-fallback-list');
+		fallbackEl.createDiv({ cls: 'timeline-excalidraw-fallback-icon', text: '🎨' });
+		const fileName = card.firstImagePath?.split('/').pop() ?? 'Excalidraw';
+		fallbackEl.createDiv({ cls: 'timeline-excalidraw-fallback-name', text: fileName });
+		fallbackEl.createDiv({ cls: 'timeline-excalidraw-fallback-hint', text: message });
+
+		this.createExcalidrawOpenButton(container, card);
+	}
+
+	/**
+	 * Excalidrawオープンボタンを作成
+	 */
+	private createExcalidrawOpenButton(container: HTMLElement, card: TimelineCard): void {
+		const openBtn = container.createEl('button', {
+			cls: 'timeline-excalidraw-open-btn',
+			text: '🎨 open',
+		});
+		openBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			void this.openNote(card);
+		});
 	}
 
 	/**
@@ -1998,6 +2108,7 @@ export class TimelineView extends ItemView {
 			case 'video': return '🎬';
 			case 'office': return '📊';
 			case 'ipynb': return '🐍';
+			case 'excalidraw': return '🎨';
 			default: return '📁';
 		}
 	}
@@ -2094,7 +2205,7 @@ export class TimelineView extends ItemView {
 		this.cardElements.push(...moreElements);
 		this.listEl.appendChild(moreFragment);
 		// DOM接続後にPDF埋め込みを実行
-		await this.activatePendingPdfEmbeds();
+		await this.activatePendingEmbeds();
 
 		this.displayedCount = endIndex;
 		this.isLoadingMore = false;
@@ -2461,7 +2572,6 @@ export class TimelineView extends ItemView {
 		if (cardEl) {
 			const bookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
 			if (bookmarkBtn) {
-				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			}
 		}
