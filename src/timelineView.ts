@@ -1662,6 +1662,87 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
+	 * PDFページナビゲーションを作成
+	 */
+	private createPdfPageNav(container: HTMLElement, card: TimelineCard, isGridMode: boolean): void {
+		const nav = container.createDiv({ cls: 'timeline-pdf-page-nav' });
+		container.dataset.pdfCurrentPage = '1';
+
+		const prevBtn = nav.createEl('button', { cls: 'timeline-pdf-page-btn' });
+		setIcon(prevBtn, 'chevron-left');
+		prevBtn.ariaLabel = 'Previous page';
+
+		const indicator = nav.createDiv({ cls: 'timeline-pdf-page-indicator', text: 'Page 1' });
+
+		const nextBtn = nav.createEl('button', { cls: 'timeline-pdf-page-btn' });
+		setIcon(nextBtn, 'chevron-right');
+		nextBtn.ariaLabel = 'Next page';
+
+		prevBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const current = parseInt(container.dataset.pdfCurrentPage ?? '1', 10);
+			if (current <= 1) return;
+			void this.navigatePdfPage(container, card, current - 1, indicator, isGridMode);
+		});
+
+		nextBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const current = parseInt(container.dataset.pdfCurrentPage ?? '1', 10);
+			void this.navigatePdfPage(container, card, current + 1, indicator, isGridMode);
+		});
+	}
+
+	/**
+	 * PDFページを指定ページに移動
+	 */
+	private async navigatePdfPage(
+		container: HTMLElement,
+		card: TimelineCard,
+		page: number,
+		indicator: HTMLElement,
+		isGridMode: boolean
+	): Promise<void> {
+		const pdfPath = card.firstImagePath;
+		if (!pdfPath) return;
+
+		const pdfFile = this.app.vault.getAbstractFileByPath(pdfPath);
+		if (!(pdfFile instanceof TFile)) return;
+
+		// 既存の埋め込みを削除
+		const oldHost = container.querySelector('.timeline-pdf-embed-host');
+		if (oldHost) oldHost.remove();
+
+		// ナビ要素の前に新しいembedHostを挿入
+		const navEl = container.querySelector('.timeline-pdf-page-nav');
+		const embedHost = container.createDiv({ cls: 'timeline-pdf-embed-host' });
+		if (navEl) {
+			container.insertBefore(embedHost, navEl);
+		}
+
+		try {
+			await MarkdownRenderer.render(
+				this.app,
+				`![[${pdfFile.path}#page=${page}]]`,
+				embedHost,
+				card.path,
+				this.renderComponent
+			);
+		} catch (error: unknown) {
+			console.error('Failed to navigate PDF page:', error);
+			this.renderPdfFallback(container, card, 'PDF preview failed. Tap Open to view.', isGridMode);
+			return;
+		}
+
+		this.applyInitialPdfZoom(embedHost);
+
+		const renderedOk = await this.ensurePdfRendered(embedHost);
+		if (renderedOk) {
+			container.dataset.pdfCurrentPage = String(page);
+			indicator.textContent = `Page ${page}`;
+		}
+	}
+
+	/**
 	 * PDFカードプレビューを描画（desktop: 埋め込み、mobile: フォールバック）
 	 */
 	private async renderPdfCardPreview(
@@ -1715,6 +1796,7 @@ export class TimelineView extends ItemView {
 		}
 
 		this.createPdfOpenButton(container, card);
+		this.createPdfPageNav(container, card, isGridMode);
 	}
 
 	/**

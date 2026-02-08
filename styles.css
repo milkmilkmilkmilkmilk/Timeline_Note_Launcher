@@ -2520,6 +2520,55 @@
 	background: var(--interactive-accent);
 }
 
+/* PDF ページナビゲーション */
+.timeline-pdf-page-nav {
+	position: absolute;
+	bottom: 8px;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	background: rgba(0, 0, 0, 0.7);
+	border-radius: 6px;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+	z-index: 10;
+}
+
+.timeline-card-pdf-embed:hover .timeline-pdf-page-nav,
+.timeline-grid-card-pdf-embed:hover .timeline-pdf-page-nav {
+	opacity: 1;
+}
+
+.timeline-pdf-page-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	background: transparent;
+	color: white;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.timeline-pdf-page-btn:hover {
+	background: rgba(255, 255, 255, 0.2);
+}
+
+.timeline-pdf-page-indicator {
+	color: white;
+	font-size: 12px;
+	font-weight: 500;
+	min-width: 48px;
+	text-align: center;
+	user-select: none;
+}
+
 /* PDFは常にフルサイズで表示 */
 .timeline-card-pdf-embed embed,
 .timeline-card-pdf-embed iframe,
