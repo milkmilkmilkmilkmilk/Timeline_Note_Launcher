@@ -464,10 +464,16 @@
 	background: rgba(0, 0, 0, 0.5);
 	border-radius: 6px;
 	cursor: pointer;
-	font-size: 18px;
 	color: var(--text-faint);
 	transition: all 0.15s ease;
 	height: fit-content;
+	display: inline-flex;
+	align-items: center;
+}
+
+.timeline-grid-bookmark-btn .svg-icon {
+	width: 18px;
+	height: 18px;
 }
 
 .timeline-grid-bookmark-btn:hover {
@@ -477,6 +483,10 @@
 
 .timeline-grid-bookmark-btn.is-bookmarked {
 	color: var(--text-warning);
+}
+
+.timeline-grid-bookmark-btn.is-bookmarked .svg-icon {
+	fill: var(--text-warning);
 }
 
 /* グリッドカード 情報領域 */
@@ -661,11 +671,17 @@
 	border: none;
 	background: transparent;
 	cursor: pointer;
-	font-size: 18px;
 	color: var(--text-faint);
 	opacity: 0.5;
 	transition: all 0.15s ease;
 	line-height: 1;
+	display: inline-flex;
+	align-items: center;
+}
+
+.timeline-bookmark-btn .svg-icon {
+	width: 18px;
+	height: 18px;
 }
 
 .timeline-bookmark-btn:hover {
@@ -679,11 +695,19 @@
 	color: var(--text-warning);
 }
 
+.timeline-bookmark-btn.is-bookmarked .svg-icon {
+	fill: var(--text-warning);
+}
+
 /* モバイル: ブックマークボタンを常に表示 */
 .timeline-mobile .timeline-bookmark-btn {
 	opacity: 0.8;
-	font-size: 22px;
 	padding: 6px 10px;
+}
+
+.timeline-mobile .timeline-bookmark-btn .svg-icon {
+	width: 22px;
+	height: 22px;
 }
 
 /* バッジ */
@@ -2663,26 +2687,35 @@
 
 .timeline-ui-twitter .timeline-card-header-bookmark {
 	margin-left: auto;
-	padding: 4px 8px;
+	padding: 8px 12px;
 	border: none;
 	background: transparent;
 	cursor: pointer;
-	font-size: 16px;
-	color: var(--text-faint);
-	opacity: 0.6;
+	color: var(--text-muted);
 	transition: all 0.15s ease;
 	line-height: 1;
+	border-radius: 9999px;
+	display: inline-flex;
+	align-items: center;
+}
+
+.timeline-ui-twitter .timeline-card-header-bookmark .svg-icon {
+	width: 14px;
+	height: 14px;
 }
 
 .timeline-ui-twitter .timeline-card-header-bookmark:hover {
-	opacity: 1;
+	background: var(--background-modifier-hover);
 	color: var(--text-warning);
-	transform: scale(1.1);
 }
 
 .timeline-ui-twitter .timeline-card-header-bookmark.is-bookmarked {
 	opacity: 1;
 	color: var(--text-warning);
+}
+
+.timeline-ui-twitter .timeline-card-header-bookmark.is-bookmarked .svg-icon {
+	fill: var(--text-warning);
 }
 
 /* ヘッダー用アクションボタン（デフォルト非表示、Twitterモードで表示） */
@@ -2694,16 +2727,16 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	padding: 4px 6px;
+	padding: 8px 12px;
 	border: none;
 	background: transparent;
 	cursor: pointer;
 	font-size: 14px;
-	color: var(--text-faint);
-	opacity: 0.5;
+	color: var(--text-muted);
 	transition: all 0.15s ease;
 	line-height: 1;
 	position: relative;
+	border-radius: 9999px;
 }
 
 /* コメントボタンに margin-left: auto を付与してボタン群を右寄せ */
@@ -2718,17 +2751,17 @@
 
 /* ホバー時の色 */
 .timeline-ui-twitter .timeline-card-header-action.timeline-card-header-comment:hover {
-	opacity: 1;
+	background: var(--background-modifier-hover);
 	color: var(--text-accent);
 }
 
 .timeline-ui-twitter .timeline-card-header-action.timeline-card-header-quote:hover {
-	opacity: 1;
+	background: var(--background-modifier-hover);
 	color: var(--interactive-success, #22c55e);
 }
 
 .timeline-ui-twitter .timeline-card-header-action.timeline-card-header-link:hover {
-	opacity: 1;
+	background: var(--background-modifier-hover);
 	color: var(--text-accent);
 }
 
@@ -2747,9 +2780,7 @@
 
 /* モバイル向け調整（大きめのタッチターゲット） */
 .timeline-ui-twitter.timeline-mobile .timeline-card-header-action {
-	padding: 6px 8px;
-	font-size: 16px;
-	opacity: 0.7;
+	padding: 10px 14px;
 }
 
 /* Twitter風タイトル */
