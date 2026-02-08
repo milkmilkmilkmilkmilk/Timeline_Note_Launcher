@@ -368,6 +368,35 @@ export class TimelineSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
+			.setName('Show properties')
+			.setDesc('Display frontmatter properties on cards')
+			.addDropdown(dropdown => dropdown
+				.addOption('off', 'Off')
+				.addOption('all', 'All')
+				.addOption('custom', 'Custom keys')
+				.setValue(this.plugin.data.settings.showProperties)
+				.onChange(async (value) => {
+					this.plugin.data.settings.showProperties = value as 'off' | 'all' | 'custom';
+					await this.plugin.syncAndSave();
+					this.plugin.refreshAllViews();
+					this.display();
+				}));
+
+		if (this.plugin.data.settings.showProperties === 'custom') {
+			new Setting(containerEl)
+				.setName('Property keys')
+				.setDesc('Comma-separated frontmatter keys to display')
+				.addText(text => text
+					// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
+					.setPlaceholder('status, category, author')
+					.setValue(this.plugin.data.settings.propertiesKeys)
+					.onChange((value) => {
+						this.plugin.data.settings.propertiesKeys = value;
+						this.debouncedSaveAndRefresh();
+					}));
+		}
+
+		new Setting(containerEl)
 			.setName('Show difficulty buttons')
 			.setDesc('Display again/hard/good/easy buttons on cards')
 			.addToggle(toggle => toggle

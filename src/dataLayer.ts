@@ -960,6 +960,8 @@ export async function createTimelineCard(
 		yamlPriority: null,
 		// 作成日（非マークダウンはファイル作成日時を使用）
 		createdAt: file.stat.ctime,
+		// Properties（非マークダウンは空）
+		properties: {},
 	};
 }
 

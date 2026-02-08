@@ -913,6 +913,41 @@
 	font-size: 11px;
 }
 
+/* Properties表示 */
+.timeline-card-properties {
+	margin: 8px 0;
+	padding: 6px 10px;
+	background: var(--background-primary);
+	border-radius: var(--timeline-radius-md);
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.timeline-property-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	background: var(--background-modifier-hover);
+	border-radius: 9999px;
+	font-size: 11px;
+	line-height: 1.4;
+}
+
+.timeline-property-key {
+	color: var(--text-faint);
+	font-weight: 600;
+}
+
+.timeline-property-key::after {
+	content: ':';
+}
+
+.timeline-property-value {
+	color: var(--text-normal);
+}
+
 /* メタ情報 */
 .timeline-card-meta {
 	display: flex;

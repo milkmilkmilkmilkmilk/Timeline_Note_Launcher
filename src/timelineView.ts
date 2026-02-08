@@ -19,6 +19,19 @@ function arraysEqual(a: string[], b: string[]): boolean {
 }
 
 /**
+ * プロパティ値を表示用文字列に変換
+ */
+function formatPropertyValue(value: unknown): string {
+	if (Array.isArray(value)) {
+		return value.map(String).join(', ');
+	}
+	if (value !== null && typeof value === 'object') {
+		return JSON.stringify(value);
+	}
+	return String(value);
+}
+
+/**
  * カードの更新検知用キー
  */
 function buildCardStateKey(card: TimelineCard): string {
@@ -1357,6 +1370,20 @@ export class TimelineView extends ItemView {
 						cls: 'timeline-link-more',
 						text: `+${card.backlinks.length - 5}`,
 					});
+				}
+			}
+		}
+
+		// Properties表示
+		if (this.plugin.data.settings.showProperties !== 'off') {
+			const props = card.properties;
+			const keys = Object.keys(props);
+			if (keys.length > 0) {
+				const propsEl = contentEl.createDiv({ cls: 'timeline-card-properties' });
+				for (const key of keys) {
+					const item = propsEl.createDiv({ cls: 'timeline-property-item' });
+					item.createSpan({ cls: 'timeline-property-key', text: key });
+					item.createSpan({ cls: 'timeline-property-value', text: formatPropertyValue(props[key]) });
 				}
 			}
 		}
