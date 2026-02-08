@@ -1252,8 +1252,8 @@ export class TimelineView extends ItemView {
 			});
 		});
 
-		// プレビュー（PDF/Canvas/Officeはサムネイル埋め込みのみ表示するためスキップ）
-		if (card.fileType !== 'pdf' && card.fileType !== 'canvas' && card.fileType !== 'office') {
+		// プレビュー（Canvas/Officeは埋め込みのみ表示するためスキップ）
+		if (card.fileType !== 'canvas' && card.fileType !== 'office') {
 			const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
 			if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
 				// 脚注記法をエスケープ（プレビューでは参照先がないため）

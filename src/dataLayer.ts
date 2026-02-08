@@ -872,7 +872,6 @@ export async function createTimelineCard(
 			break;
 		case 'pdf':
 			preview = `📄 PDF document`;
-			firstImagePath = file.path;  // PDFファイル自身を埋め込み表示用に使用
 			break;
 		case 'audio':
 			preview = `🎵 ${file.extension.toUpperCase()} audio`;
