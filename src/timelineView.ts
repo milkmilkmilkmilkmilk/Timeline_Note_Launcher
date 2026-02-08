@@ -1,6 +1,6 @@
-// Timeline Note Launcher - Timeline View
-import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component, Menu } from 'obsidian';
-import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
+﻿// Timeline Note Launcher - Timeline View
+import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component, Menu, Modal } from 'obsidian';
+import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE, FilterPreset } from './types';
 import { getNextIntervals, getBookmarkedPaths, getBookmarksPlugin, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
@@ -8,7 +8,7 @@ import { LinkNoteModal } from './linkNoteModal';
 import type TimelineNoteLauncherPlugin from './main';
 
 /**
- * 配�Eの冁E��が等しぁE��を比輁E
+ * 驟榊・縺ｮ蜀・ｮｹ縺檎ｭ峨＠縺・°繧呈ｯ碑ｼ・
  */
 function arraysEqual(a: string[], b: string[]): boolean {
 	if (a.length !== b.length) return false;
@@ -19,7 +19,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
 }
 
 /**
- * カード�E更新検知用キー
+ * 繧ｫ繝ｼ繝峨・譖ｴ譁ｰ讀懃衍逕ｨ繧ｭ繝ｼ
  */
 function buildCardStateKey(card: TimelineCard): string {
 	return [
@@ -28,6 +28,71 @@ function buildCardStateKey(card: TimelineCard): string {
 		String(card.reviewCount),
 		String(card.nextReviewAt ?? ''),
 	].join('|');
+}
+
+/**
+ * シンプルな入力モーダル（プリセット名入力用）
+ */
+class TextInputModal extends Modal {
+	private result: string | null = null;
+	private resolvePromise: ((value: string | null) => void) | null = null;
+	private title: string;
+	private placeholder: string;
+
+	constructor(app: import('obsidian').App, title: string, placeholder: string) {
+		super(app);
+		this.title = title;
+		this.placeholder = placeholder;
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.addClass('timeline-preset-name-modal');
+		contentEl.createEl('h3', { text: this.title });
+
+		const inputEl = contentEl.createEl('input', {
+			type: 'text',
+			placeholder: this.placeholder,
+			cls: 'timeline-preset-name-input',
+		});
+
+		const buttonContainer = contentEl.createDiv({ cls: 'timeline-preset-modal-buttons' });
+
+		const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+		cancelBtn.addEventListener('click', () => {
+			this.result = null;
+			this.close();
+		});
+
+		const saveBtn = buttonContainer.createEl('button', { text: 'Save', cls: 'mod-cta' });
+		saveBtn.addEventListener('click', () => {
+			this.result = inputEl.value;
+			this.close();
+		});
+
+		// Enter キーで保存
+		inputEl.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter') {
+				this.result = inputEl.value;
+				this.close();
+			}
+		});
+
+		// フォーカスを入力欄に
+		setTimeout(() => inputEl.focus(), 50);
+	}
+
+	onClose(): void {
+		if (this.resolvePromise) {
+			this.resolvePromise(this.result);
+		}
+	}
+
+	async waitForResult(): Promise<string | null> {
+		return new Promise((resolve) => {
+			this.resolvePromise = resolve;
+		});
+	}
 }
 
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
@@ -44,28 +109,31 @@ export class TimelineView extends ItemView {
 	private focusedIndex: number = -1;
 	private cardElements: HTMLElement[] = [];
 	private keydownHandler: (e: KeyboardEvent) => void;
-	// フィルタ状慁E
+	// 繝輔ぅ繝ｫ繧ｿ迥ｶ諷・
 	private searchQuery: string = '';
 	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'other']);
 	private selectedTags: Set<string> = new Set();
 	private searchDebounceTimer: number | null = null;
-	// 直前にアクチE��ブだったleaf�E�タイムライン以外！E
+	// 日付範囲フィルタ
+	private dateFilterStart: string = '';  // YYYY-MM-DD形式
+	private dateFilterEnd: string = '';    // YYYY-MM-DD形式
+	// 逶ｴ蜑阪↓繧｢繧ｯ繝・ぅ繝悶□縺｣縺殕eaf・医ち繧､繝繝ｩ繧､繝ｳ莉･螟厄ｼ・
 	private previousActiveLeaf: WorkspaceLeaf | null = null;
-	// 差刁E��ンダリング用�E�前回�Eカードパス
+	// 蟾ｮ蛻・Ξ繝ｳ繝繝ｪ繝ｳ繧ｰ逕ｨ・壼燕蝗槭・繧ｫ繝ｼ繝峨ヱ繧ｹ
 	private lastCardPaths: string[] = [];
-	// 差刁E��ンダリング用�E�前回�Eカード状態キー
+	// 蟾ｮ蛻・Ξ繝ｳ繝繝ｪ繝ｳ繧ｰ逕ｨ・壼燕蝗槭・繧ｫ繝ｼ繝臥憾諷九く繝ｼ
 	private lastCardStateKeys: string[] = [];
-	// ブックマ�EクパスのキャチE��ュ
+	// 繝悶ャ繧ｯ繝槭・繧ｯ繝代せ縺ｮ繧ｭ繝｣繝・す繝･
 	private cachedBookmarkedPaths: Set<string> | null = null;
-	// タグキャチE��ュ�E�Eefresh()時に更新�E�E
+	// 繧ｿ繧ｰ繧ｭ繝｣繝・す繝･・・efresh()譎ゅ↓譖ｴ譁ｰ・・
 	private cachedAllTags: string[] = [];
 	private isTagsCollapsed: boolean = false;
-	// 無限スクロール用
+	// 辟｡髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ逕ｨ
 	private displayedCount: number = 0;
 	private isLoadingMore: boolean = false;
 	private scrollHandler: () => void;
 	private listEl: HTMLElement | null = null;
-	// プルトゥリフレチE��ュ用
+	// 繝励Ν繝医ぇ繝ｪ繝輔Ξ繝・す繝･逕ｨ
 	private pullToRefreshStartY: number = 0;
 	private pullToRefreshTriggered: boolean = false;
 	private pullIndicatorEl: HTMLElement | null = null;
@@ -79,7 +147,7 @@ export class TimelineView extends ItemView {
 		this.renderComponent = new Component();
 		this.keydownHandler = this.handleKeydown.bind(this);
 		this.scrollHandler = this.handleScroll.bind(this);
-		// プルトゥリフレチE��ュ用
+		// 繝励Ν繝医ぇ繝ｪ繝輔Ξ繝・す繝･逕ｨ
 		this.touchStartHandler = this.handleTouchStart.bind(this);
 		this.touchMoveHandler = this.handleTouchMove.bind(this);
 		this.touchEndHandler = this.handleTouchEnd.bind(this);
@@ -100,24 +168,24 @@ export class TimelineView extends ItemView {
 	async onOpen(): Promise<void> {
 		this.listContainerEl = this.contentEl.createDiv({ cls: 'timeline-container' });
 
-		// モバイル向けクラス追加
+		// 繝｢繝舌う繝ｫ蜷代￠繧ｯ繝ｩ繧ｹ霑ｽ蜉
 		this.updateMobileClass();
 
-		// キーボ�EドショートカチE��登録
+		// 繧ｭ繝ｼ繝懊・繝峨す繝ｧ繝ｼ繝医き繝・ヨ逋ｻ骭ｲ
 		this.listContainerEl.tabIndex = 0;
 		this.listContainerEl.addEventListener('keydown', this.keydownHandler);
 
-		// 無限スクロール用スクロールイベント登録
+		// 辟｡髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ逕ｨ繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ繧､繝吶Φ繝育匳骭ｲ
 		this.listContainerEl.addEventListener('scroll', this.scrollHandler);
 
-		// プルトゥリフレチE��ュ用タチE��イベント登録�E�モバイルのみ�E�E
+		// 繝励Ν繝医ぇ繝ｪ繝輔Ξ繝・す繝･逕ｨ繧ｿ繝・メ繧､繝吶Φ繝育匳骭ｲ・医Δ繝舌う繝ｫ縺ｮ縺ｿ・・
 		if (Platform.isMobile) {
 			this.listContainerEl.addEventListener('touchstart', this.touchStartHandler, { passive: true });
 			this.listContainerEl.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
 			this.listContainerEl.addEventListener('touchend', this.touchEndHandler, { passive: true });
 		}
 
-		// アクチE��ブleafの変更を監視して、タイムライン以外�Eleafを記録
+		// 繧｢繧ｯ繝・ぅ繝僕eaf縺ｮ螟画峩繧堤屮隕悶＠縺ｦ縲√ち繧､繝繝ｩ繧､繝ｳ莉･螟悶・leaf繧定ｨ倬鹸
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', (leaf) => {
 				if (leaf && leaf !== this.leaf && leaf.view.getViewType() !== TIMELINE_VIEW_TYPE) {
@@ -126,7 +194,7 @@ export class TimelineView extends ItemView {
 			})
 		);
 
-		// 現在アクチE��ブなleafを�E期値として保存（タイムライン以外！E
+		// 迴ｾ蝨ｨ繧｢繧ｯ繝・ぅ繝悶↑leaf繧貞・譛溷､縺ｨ縺励※菫晏ｭ假ｼ医ち繧､繝繝ｩ繧､繝ｳ莉･螟厄ｼ・
 		const currentActive = this.app.workspace.getActiveViewOfType(ItemView)?.leaf;
 		if (currentActive && currentActive !== this.leaf && currentActive.view.getViewType() !== TIMELINE_VIEW_TYPE) {
 			this.previousActiveLeaf = currentActive;
@@ -136,10 +204,10 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * モバイルクラスの更新
+	 * 繝｢繝舌う繝ｫ繧ｯ繝ｩ繧ｹ縺ｮ譖ｴ譁ｰ
 	 */
 	private updateMobileClass(): void {
-		// 実際のモバイルチE��イス、また�EPCでモバイルモードが有効な場吁E
+		// 螳滄圀縺ｮ繝｢繝舌う繝ｫ繝・ヰ繧､繧ｹ縲√∪縺溘・PC縺ｧ繝｢繝舌う繝ｫ繝｢繝ｼ繝峨′譛牙柑縺ｪ蝣ｴ蜷・
 		const isMobileView = Platform.isMobile || this.plugin.data.settings.mobileViewOnDesktop;
 		if (isMobileView) {
 			this.listContainerEl.addClass('timeline-mobile');
@@ -149,66 +217,66 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * カラーチE�Eマ�E更新
+	 * 繧ｫ繝ｩ繝ｼ繝・・繝槭・譖ｴ譁ｰ
 	 */
 	private updateColorTheme(): void {
 		const theme = this.plugin.data.settings.colorTheme;
 		const themes: ColorTheme[] = ['default', 'blue', 'green', 'purple', 'orange', 'pink', 'red', 'cyan', 'yellow'];
 
-		// 既存�EチE�Eマクラスを削除
+		// 譌｢蟄倥・繝・・繝槭け繝ｩ繧ｹ繧貞炎髯､
 		for (const t of themes) {
 			this.listContainerEl.removeClass(`timeline-theme-${t}`);
 		}
 
-		// 新しいチE�Eマクラスを追加
+		// 譁ｰ縺励＞繝・・繝槭け繝ｩ繧ｹ繧定ｿｽ蜉
 		this.listContainerEl.addClass(`timeline-theme-${theme}`);
 	}
 
 	/**
-	 * UIチE�Eマ�E更新
+	 * UI繝・・繝槭・譖ｴ譁ｰ
 	 */
 	private updateUITheme(): void {
 		const uiTheme = this.plugin.data.settings.uiTheme;
 		const themes: UITheme[] = ['classic', 'twitter'];
 
-		// 既存�EUIチE�Eマクラスを削除
+		// 譌｢蟄倥・UI繝・・繝槭け繝ｩ繧ｹ繧貞炎髯､
 		for (const t of themes) {
 			this.listContainerEl.removeClass(`timeline-ui-${t}`);
 		}
 
-		// 新しいUIチE�Eマクラスを追加
+		// 譁ｰ縺励＞UI繝・・繝槭け繝ｩ繧ｹ繧定ｿｽ蜉
 		this.listContainerEl.addClass(`timeline-ui-${uiTheme}`);
 	}
 
 	/**
-	 * モバイルモードを刁E��替え！ECのみ�E�E
+	 * 繝｢繝舌う繝ｫ繝｢繝ｼ繝峨ｒ蛻・ｊ譖ｿ縺茨ｼ・C縺ｮ縺ｿ・・
 	 */
 	async toggleMobileView(): Promise<void> {
 		if (Platform.isMobile) return;
 		this.plugin.data.settings.mobileViewOnDesktop = !this.plugin.data.settings.mobileViewOnDesktop;
 		void this.plugin.syncAndSave();
 		this.updateMobileClass();
-		// 強制皁E��再描画するためにキャチE��ュをクリア
+		// 蠑ｷ蛻ｶ逧・↓蜀肴緒逕ｻ縺吶ｋ縺溘ａ縺ｫ繧ｭ繝｣繝・す繝･繧偵け繝ｪ繧｢
 		this.lastCardPaths = [];
 		this.lastCardStateKeys = [];
 		await this.render();
 	}
 
 	async onClose(): Promise<void> {
-		// スクロール位置を保孁E
+		// 繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ菴咲ｽｮ繧剃ｿ晏ｭ・
 		this.scrollPosition = this.listContainerEl.scrollTop;
-		// 検索チE��ウンスタイマ�Eを解除
+		// 讀懃ｴ｢繝・ヰ繧ｦ繝ｳ繧ｹ繧ｿ繧､繝槭・繧定ｧ｣髯､
 		if (this.searchDebounceTimer !== null) {
 			window.clearTimeout(this.searchDebounceTimer);
 			this.searchDebounceTimer = null;
 		}
-		// レンダリングコンポ�EネントをアンローチE
+		// 繝ｬ繝ｳ繝繝ｪ繝ｳ繧ｰ繧ｳ繝ｳ繝昴・繝阪Φ繝医ｒ繧｢繝ｳ繝ｭ繝ｼ繝・
 		this.renderComponent.unload();
-		// キーボ�Eドリスナ�Eを解除
+		// 繧ｭ繝ｼ繝懊・繝峨Μ繧ｹ繝翫・繧定ｧ｣髯､
 		this.listContainerEl.removeEventListener('keydown', this.keydownHandler);
-		// スクロールリスナ�Eを解除
+		// 繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ繝ｪ繧ｹ繝翫・繧定ｧ｣髯､
 		this.listContainerEl.removeEventListener('scroll', this.scrollHandler);
-		// タチE��リスナ�Eを解除
+		// 繧ｿ繝・メ繝ｪ繧ｹ繝翫・繧定ｧ｣髯､
 		if (Platform.isMobile) {
 			this.listContainerEl.removeEventListener('touchstart', this.touchStartHandler);
 			this.listContainerEl.removeEventListener('touchmove', this.touchMoveHandler);
@@ -217,38 +285,38 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * タイムラインを更新
+	 * 繧ｿ繧､繝繝ｩ繧､繝ｳ繧呈峩譁ｰ
 	 */
 	async refresh(): Promise<void> {
-		// スクロール位置を保孁E
+		// 繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ菴咲ｽｮ繧剃ｿ晏ｭ・
 		this.scrollPosition = this.listContainerEl?.scrollTop ?? 0;
 
-		// 表示設定を更新�E�設定との同期�E�E
+		// 陦ｨ遉ｺ險ｭ螳壹ｒ譖ｴ譁ｰ・郁ｨｭ螳壹→縺ｮ蜷梧悄・・
 		this.updateMobileClass();
 		this.updateColorTheme();
 		this.updateUITheme();
 
-		// ブックマ�EクキャチE��ュを更新
+		// 繝悶ャ繧ｯ繝槭・繧ｯ繧ｭ繝｣繝・す繝･繧呈峩譁ｰ
 		this.cachedBookmarkedPaths = getBookmarkedPaths(this.app);
 
-		// カードを取征E
+		// 繧ｫ繝ｼ繝峨ｒ蜿門ｾ・
 		const result = await this.plugin.getTimelineCards();
 		this.cards = result.cards;
 		this.cachedAllTags = this.collectAllTags();
 		this.newCount = result.newCount;
 		this.dueCount = result.dueCount;
 
-		// 描画
+		// 謠冗判
 		await this.render();
 
-		// スクロール位置を復允E
+		// 繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ菴咲ｽｮ繧貞ｾｩ蜈・
 		if (this.listContainerEl) {
 			this.listContainerEl.scrollTop = this.scrollPosition;
 		}
 	}
 
 	/**
-	 * カードをチャンク単位で描画しDocumentFragmentに追加
+	 * 繧ｫ繝ｼ繝峨ｒ繝√Ε繝ｳ繧ｯ蜊倅ｽ阪〒謠冗判縺優ocumentFragment縺ｫ霑ｽ蜉
 	 */
 	private async renderCardsToFragment(
 		cards: TimelineCard[],
@@ -273,40 +341,40 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * カード一覧を描画
+	 * 繧ｫ繝ｼ繝我ｸ隕ｧ繧呈緒逕ｻ
 	 */
 	private async render(): Promise<void> {
-		// カードパスの変更を検�E
+		// 繧ｫ繝ｼ繝峨ヱ繧ｹ縺ｮ螟画峩繧呈､懷・
 		const newPaths = this.cards.map(c => c.path);
 		const newStateKeys = this.cards.map(card => buildCardStateKey(card));
 		const pathsChanged = !arraysEqual(this.lastCardPaths, newPaths);
 		const stateChanged = !arraysEqual(this.lastCardStateKeys, newStateKeys);
 
-		// パスめE��ード�E容が変わってぁE��ぁE��合�E完�E再構築をスキチE�E�E��EチE��ーの統計�Eみ更新�E�E
+		// 繝代せ繧・き繝ｼ繝牙・螳ｹ縺悟､峨ｏ縺｣縺ｦ縺・↑縺・ｴ蜷医・螳悟・蜀肴ｧ狗ｯ峨ｒ繧ｹ繧ｭ繝・・・医・繝・ム繝ｼ縺ｮ邨ｱ險医・縺ｿ譖ｴ譁ｰ・・
 		if (!pathsChanged && !stateChanged && this.listContainerEl.hasChildNodes()) {
-			// 統計�Eみ更新
+			// 邨ｱ險医・縺ｿ譖ｴ譁ｰ
 			const statsEl = this.listContainerEl.querySelector('.timeline-stats');
 			if (statsEl && this.plugin.data.settings.selectionMode === 'srs') {
 				statsEl.empty();
 				statsEl.createSpan({ cls: 'timeline-stat-new', text: `${this.newCount} new` });
-				statsEl.appendText(' · ');
+				statsEl.appendText(' ﾂｷ ');
 				statsEl.createSpan({ cls: 'timeline-stat-due', text: `${this.dueCount} due` });
 			}
 			return;
 		}
 
-		// パスを記録
+		// 繝代せ繧定ｨ倬鹸
 		this.lastCardPaths = newPaths;
 		this.lastCardStateKeys = newStateKeys;
 
-		// 古ぁE��ンダリングをクリーンアチE�E
+		// 蜿､縺・Ξ繝ｳ繝繝ｪ繝ｳ繧ｰ繧偵け繝ｪ繝ｼ繝ｳ繧｢繝・・
 		this.renderComponent.unload();
 		this.renderComponent = new Component();
 		this.renderComponent.load();
 
 		this.listContainerEl.empty();
 
-		// 画像サイズモードクラスを適用
+		// 逕ｻ蜒上し繧､繧ｺ繝｢繝ｼ繝峨け繝ｩ繧ｹ繧帝←逕ｨ
 		const imageSizeMode = this.plugin.data.settings.imageSizeMode;
 		const sizeModes: ImageSizeMode[] = ['small', 'medium', 'large', 'full'];
 		for (const mode of sizeModes) {
@@ -314,7 +382,7 @@ export class TimelineView extends ItemView {
 		}
 		this.listContainerEl.addClass(`timeline-image-${imageSizeMode}`);
 
-		// プレビュー高さ制紁E��Eixed lines モード�Eみ�E�E
+		// 繝励Ξ繝薙Η繝ｼ鬮倥＆蛻ｶ邏・ｼ・ixed lines 繝｢繝ｼ繝峨・縺ｿ・・
 		if (this.plugin.data.settings.previewMode === 'lines') {
 			this.listContainerEl.addClass('timeline-preview-clamped');
 			const maxHeight = this.plugin.data.settings.previewLines * 40 + 16;
@@ -324,57 +392,58 @@ export class TimelineView extends ItemView {
 			this.listContainerEl.style.removeProperty('--preview-max-height');
 		}
 
-		// ヘッダー
+		// 繝倥ャ繝繝ｼ
 		const header = this.listContainerEl.createDiv({ cls: 'timeline-header' });
 
 		const leftSection = header.createDiv({ cls: 'timeline-header-left' });
 		const refreshBtn = leftSection.createEl('button', {
 			cls: 'timeline-refresh-btn',
 			text: '↻',
+			attr: { 'aria-label': 'Refresh timeline' },
 		});
 		refreshBtn.addEventListener('click', () => { void this.refresh(); });
 
-		// SRSモードでは統計を表示
+		// SRS繝｢繝ｼ繝峨〒縺ｯ邨ｱ險医ｒ陦ｨ遉ｺ
 		const settings = this.plugin.data.settings;
 		if (settings.selectionMode === 'srs') {
 			const statsEl = leftSection.createSpan({ cls: 'timeline-stats' });
 			statsEl.createSpan({ cls: 'timeline-stat-new', text: `${this.newCount} new` });
-			statsEl.createSpan({ text: ' · ' });
+			statsEl.createSpan({ text: ' ﾂｷ ' });
 			statsEl.createSpan({ cls: 'timeline-stat-due', text: `${this.dueCount} due` });
 		}
 
 		const rightSection = header.createDiv({ cls: 'timeline-header-right' });
 
-		// PC/モバイル刁E��替え�Eタン�E�ECのみ表示�E�E
+		// PC/繝｢繝舌う繝ｫ蛻・ｊ譖ｿ縺医・繧ｿ繝ｳ・・C縺ｮ縺ｿ陦ｨ遉ｺ・・
 		if (!Platform.isMobile) {
 			const isMobileView = settings.mobileViewOnDesktop;
 			const toggleBtn = rightSection.createEl('button', {
 				cls: 'timeline-view-toggle-btn',
-				text: isMobileView ? '📱' : '🖥�E�E,
+				text: isMobileView ? 'Desktop' : 'Mobile',
 				attr: { 'aria-label': isMobileView ? 'Switch to PC view' : 'Switch to Mobile view' },
 			});
 			toggleBtn.addEventListener('click', () => { void this.toggleMobileView(); });
 		}
 
-		// リスチEグリチE��刁E��替え�Eタン
+		// 繝ｪ繧ｹ繝・繧ｰ繝ｪ繝・ラ蛻・ｊ譖ｿ縺医・繧ｿ繝ｳ
 		const viewMode = settings.viewMode;
 		const viewModeBtn = rightSection.createEl('button', {
 			cls: 'timeline-view-mode-btn',
-			text: viewMode === 'list' ? '▤' : '▦',
+			text: viewMode === 'list' ? '笆､' : '笆ｦ',
 			attr: { 'aria-label': viewMode === 'list' ? 'Switch to Grid view' : 'Switch to List view' },
 		});
 		viewModeBtn.addEventListener('click', () => { void this.toggleViewMode(); });
 
-		// クイチE��ノ�Eト作�Eボックスを描画
+		// 繧ｯ繧､繝・け繝弱・繝井ｽ懈・繝懊ャ繧ｯ繧ｹ繧呈緒逕ｻ
 		this.renderComposeBox();
 
-		// フィルタバ�Eを描画
+		// 繝輔ぅ繝ｫ繧ｿ繝舌・繧呈緒逕ｻ
 		this.renderFilterBar();
 
-		// フィルタを適用
+		// 繝輔ぅ繝ｫ繧ｿ繧帝←逕ｨ
 		this.applyFilters();
 
-		// カード数表示�E�フィルタ後！E
+		// 繧ｫ繝ｼ繝画焚陦ｨ遉ｺ・医ヵ繧｣繝ｫ繧ｿ蠕鯉ｼ・
 		const countText = this.filteredCards.length === this.cards.length
 			? `${this.cards.length} notes`
 			: `${this.filteredCards.length} / ${this.cards.length} notes`;
@@ -383,31 +452,31 @@ export class TimelineView extends ItemView {
 			text: countText,
 		});
 
-		// カードリスチEグリチE��
+		// 繧ｫ繝ｼ繝峨Μ繧ｹ繝・繧ｰ繝ｪ繝・ラ
 		const isGridMode = settings.viewMode === 'grid';
 		const listCls = isGridMode ? `timeline-grid timeline-grid-cols-${settings.gridColumns}` : 'timeline-list';
 		this.listEl = this.listContainerEl.createDiv({ cls: listCls });
 
-		// カード要素配�EをリセチE��
+		// 繧ｫ繝ｼ繝芽ｦ∫ｴ驟榊・繧偵Μ繧ｻ繝・ヨ
 		this.cardElements = [];
 
-		// 無限スクロール対応：�E期表示数を決宁E
+		// 辟｡髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ蟇ｾ蠢懶ｼ壼・譛溯｡ｨ遉ｺ謨ｰ繧呈ｱｺ螳・
 		const enableInfiniteScroll = settings.enableInfiniteScroll;
 		const batchSize = settings.infiniteScrollBatchSize || 20;
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
-		// 初期カードをチャンク描画
+		// 蛻晄悄繧ｫ繝ｼ繝峨ｒ繝√Ε繝ｳ繧ｯ謠冗判
 		const { fragment, elements } = await this.renderCardsToFragment(
 			this.filteredCards.slice(0, this.displayedCount), isGridMode
 		);
 		this.cardElements = elements;
 		this.listEl.appendChild(fragment);
 
-		// 下部フッター
+		// 荳矩Κ繝輔ャ繧ｿ繝ｼ
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
 
-		// 無限スクロール時�EローチE��ングインジケーター、そぁE��なければリフレチE��ュボタン
+		// 辟｡髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ譎ゅ・繝ｭ繝ｼ繝・ぅ繝ｳ繧ｰ繧､繝ｳ繧ｸ繧ｱ繝ｼ繧ｿ繝ｼ縲√◎縺・〒縺ｪ縺代ｌ縺ｰ繝ｪ繝輔Ξ繝・す繝･繝懊ち繝ｳ
 		if (enableInfiniteScroll && this.displayedCount < this.filteredCards.length) {
 			const loadingEl = footer.createDiv({ cls: 'timeline-loading-indicator' });
 			loadingEl.createSpan({ cls: 'timeline-loading-spinner' });
@@ -416,38 +485,39 @@ export class TimelineView extends ItemView {
 			const bottomRefreshBtn = footer.createEl('button', {
 				cls: 'timeline-refresh-btn',
 				text: '↻',
+				attr: { 'aria-label': 'Refresh timeline' },
 			});
 			bottomRefreshBtn.addEventListener('click', () => { void this.refresh(); });
 		}
 
-		// フォーカスインチE��クスをリセチE��
+		// 繝輔か繝ｼ繧ｫ繧ｹ繧､繝ｳ繝・ャ繧ｯ繧ｹ繧偵Μ繧ｻ繝・ヨ
 		this.focusedIndex = -1;
 	}
 
 	/**
-	 * 表示モードを刁E��替ぁE
+	 * 陦ｨ遉ｺ繝｢繝ｼ繝峨ｒ蛻・ｊ譖ｿ縺・
 	 */
 	async toggleViewMode(): Promise<void> {
 		const currentMode = this.plugin.data.settings.viewMode;
 		this.plugin.data.settings.viewMode = currentMode === 'list' ? 'grid' : 'list';
 		await this.plugin.syncAndSave();
-		// 強制皁E��再描画するためにキャチE��ュをクリア
+		// 蠑ｷ蛻ｶ逧・↓蜀肴緒逕ｻ縺吶ｋ縺溘ａ縺ｫ繧ｭ繝｣繝・す繝･繧偵け繝ｪ繧｢
 		this.lastCardPaths = [];
 		this.lastCardStateKeys = [];
 		await this.render();
 	}
 
 	/**
-	 * クイチE��ノ�Eト作�Eボックスを描画
+	 * 繧ｯ繧､繝・け繝弱・繝井ｽ懈・繝懊ャ繧ｯ繧ｹ繧呈緒逕ｻ
 	 */
 	private renderComposeBox(): void {
 		const composeBox = this.listContainerEl.createDiv({ cls: 'timeline-compose-box' });
 
-		// アバター風のアイコン
+		// 繧｢繝舌ち繝ｼ鬚ｨ縺ｮ繧｢繧､繧ｳ繝ｳ
 		const avatarEl = composeBox.createDiv({ cls: 'timeline-compose-avatar' });
-		avatarEl.textContent = '📝';
+		avatarEl.textContent = '統';
 
-		// 入力エリア
+		// 蜈･蜉帙お繝ｪ繧｢
 		const inputArea = composeBox.createDiv({ cls: 'timeline-compose-input-area' });
 
 		const textarea = inputArea.createEl('textarea', {
@@ -458,10 +528,10 @@ export class TimelineView extends ItemView {
 			},
 		});
 
-		// アクションバ�E
+		// 繧｢繧ｯ繧ｷ繝ｧ繝ｳ繝舌・
 		const actionsBar = inputArea.createDiv({ cls: 'timeline-compose-actions' });
 
-		// 斁E��数カウンター
+		// 譁・ｭ玲焚繧ｫ繧ｦ繝ｳ繧ｿ繝ｼ
 		const charCounter = actionsBar.createSpan({ cls: 'timeline-compose-char-counter' });
 		charCounter.textContent = '0';
 
@@ -469,7 +539,7 @@ export class TimelineView extends ItemView {
 			charCounter.textContent = String(textarea.value.length);
 		});
 
-		// 投稿ボタン
+		// 謚慕ｨｿ繝懊ち繝ｳ
 		const postBtn = actionsBar.createEl('button', {
 			cls: 'timeline-compose-post-btn',
 			text: 'Post',
@@ -492,7 +562,7 @@ export class TimelineView extends ItemView {
 				charCounter.textContent = '0';
 				postBtn.textContent = 'Post';
 
-				// タイムラインをリフレチE��ュ
+				// 繧ｿ繧､繝繝ｩ繧､繝ｳ繧偵Μ繝輔Ξ繝・す繝･
 				void this.refresh();
 			}).catch((error: unknown) => {
 				console.error('Failed to create quick note:', error);
@@ -501,7 +571,7 @@ export class TimelineView extends ItemView {
 			});
 		});
 
-		// Ctrl+Enter で投稿
+		// Ctrl+Enter 縺ｧ謚慕ｨｿ
 		textarea.addEventListener('keydown', (e) => {
 			if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !postBtn.disabled) {
 				e.preventDefault();
@@ -511,44 +581,44 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * クイチE��ノ�Eトを作�E
+	 * 繧ｯ繧､繝・け繝弱・繝医ｒ菴懈・
 	 */
 	private async createQuickNote(content: string): Promise<void> {
 		const settings = this.plugin.data.settings;
 		const template = settings.quickNoteTemplate || DEFAULT_QUICK_NOTE_TEMPLATE;
 
-		// UID生�E�E�タイムスタンプ�Eース�E�E
+		// UID逕滓・・医ち繧､繝繧ｹ繧ｿ繝ｳ繝励・繝ｼ繧ｹ・・
 		const now = new Date();
 		const uid = now.getTime().toString(36);
 
-		// 日付フォーマッチE
+		// 譌･莉倥ヵ繧ｩ繝ｼ繝槭ャ繝・
 		const dateParts = now.toISOString().split('T');
 		const dateStr = dateParts[0] ?? '';
 
-		// タイトル生�E�E�最初�E行また�E最初�E50斁E��！E
+		// 繧ｿ繧､繝医Ν逕滓・・域怙蛻昴・陦後∪縺溘・譛蛻昴・50譁・ｭ暦ｼ・
 		const lines = content.split('\n');
 		const firstLine = lines[0] ?? '';
 		const title = firstLine.length > 50 ? firstLine.substring(0, 50) + '...' : firstLine;
 
-		// チE��プレートを適用
+		// 繝・Φ繝励Ξ繝ｼ繝医ｒ驕ｩ逕ｨ
 		const noteContent = template
 			.replace(/\{\{uid\}\}/g, uid)
 			.replace(/\{\{title\}\}/g, title)
 			.replace(/\{\{date\}\}/g, dateStr)
 			.replace(/\{\{content\}\}/g, content);
 
-		// ファイル名を生�E�E�タイムスタンチE+ タイトルの一部�E�E
+		// 繝輔ぃ繧､繝ｫ蜷阪ｒ逕滓・・医ち繧､繝繧ｹ繧ｿ繝ｳ繝・+ 繧ｿ繧､繝医Ν縺ｮ荳驛ｨ・・
 		const safeTitle = title
 			.replace(/[\\/:*?"<>|#^[\]]/g, '')
 			.replace(/\s+/g, '_')
 			.substring(0, 30);
 		const fileName = `${dateStr}_${uid}_${safeTitle}.md`;
 
-		// 保存�Eフォルダ
+		// 菫晏ｭ伜・繝輔か繝ｫ繝
 		const folder = settings.quickNoteFolder.trim();
 		const filePath = folder ? `${folder}/${fileName}` : fileName;
 
-		// フォルダが存在しなぁE��合�E作�E�E�ネストされたフォルダにも対応！E
+		// 繝輔か繝ｫ繝縺悟ｭ伜惠縺励↑縺・ｴ蜷医・菴懈・・医ロ繧ｹ繝医＆繧後◆繝輔か繝ｫ繝縺ｫ繧ょｯｾ蠢懶ｼ・
 		if (folder) {
 			const folderExists = this.app.vault.getAbstractFileByPath(folder);
 			if (!folderExists) {
@@ -562,26 +632,26 @@ export class TimelineView extends ItemView {
 							await this.app.vault.createFolder(currentPath);
 						} catch (err) {
 							console.error(`Failed to create folder: ${currentPath}`, err);
-							throw new Error(`フォルダの作�Eに失敗しました: ${currentPath}`);
+							throw new Error(`繝輔か繝ｫ繝縺ｮ菴懈・縺ｫ螟ｱ謨励＠縺ｾ縺励◆: ${currentPath}`);
 						}
 					}
 				}
 			}
 		}
 
-		// ノ�Eトを作�E
+		// 繝弱・繝医ｒ菴懈・
 		await this.app.vault.create(filePath, noteContent);
 	}
 
 	/**
-	 * フィルタバ�Eを描画
+	 * 繝輔ぅ繝ｫ繧ｿ繝舌・繧呈緒逕ｻ
 	 */
 	private renderFilterBar(): void {
 		const filterBar = this.listContainerEl.createDiv({ cls: 'timeline-filter-bar' });
 
-		// 検索セクション
+		// 讀懃ｴ｢繧ｻ繧ｯ繧ｷ繝ｧ繝ｳ
 		const searchSection = filterBar.createDiv({ cls: 'timeline-filter-search' });
-		const searchIcon = searchSection.createSpan({ cls: 'timeline-search-icon', text: '🔍' });
+		const searchIcon = searchSection.createSpan({ cls: 'timeline-search-icon', text: '剥' });
 		searchIcon.setAttribute('aria-hidden', 'true');
 		const searchInput = searchSection.createEl('input', {
 			cls: 'timeline-search-input',
@@ -596,17 +666,59 @@ export class TimelineView extends ItemView {
 			this.handleSearchInput(value);
 		});
 
-		// ファイルタイプフィルタ
+		// 日付範囲フィルタ
+		const dateSection = filterBar.createDiv({ cls: 'timeline-filter-dates' });
+		dateSection.createSpan({ cls: 'timeline-filter-dates-label', text: 'Date:' });
+		const dateStartInput = dateSection.createEl('input', {
+			cls: 'timeline-date-input',
+			attr: {
+				type: 'date',
+				value: this.dateFilterStart,
+				'aria-label': 'Filter start date',
+			},
+		});
+		dateSection.createSpan({ text: '-' });
+		const dateEndInput = dateSection.createEl('input', {
+			cls: 'timeline-date-input',
+			attr: {
+				type: 'date',
+				value: this.dateFilterEnd,
+				'aria-label': 'Filter end date',
+			},
+		});
+		dateStartInput.addEventListener('change', (e) => {
+			this.dateFilterStart = (e.target as HTMLInputElement).value;
+			void this.renderCardList();
+		});
+		dateEndInput.addEventListener('change', (e) => {
+			this.dateFilterEnd = (e.target as HTMLInputElement).value;
+			void this.renderCardList();
+		});
+		// クリアボタン
+		if (this.dateFilterStart || this.dateFilterEnd) {
+			const clearBtn = dateSection.createEl('button', {
+				cls: 'timeline-date-clear-btn',
+				text: '✕',
+				attr: { 'aria-label': 'Clear date filter' },
+			});
+			clearBtn.addEventListener('click', () => {
+				this.dateFilterStart = '';
+				this.dateFilterEnd = '';
+				void this.renderCardList();
+			});
+		}
+
+		// 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励ヵ繧｣繝ｫ繧ｿ
 		const typeFilters = filterBar.createDiv({ cls: 'timeline-filter-types' });
 		const fileTypes: { type: string; icon: string; label: string }[] = [
-			{ type: 'markdown', icon: '📝', label: 'Markdown' },
-			{ type: 'text', icon: '📃', label: 'Text' },
-			{ type: 'image', icon: '🖼�E�E, label: 'Image' },
-			{ type: 'pdf', icon: '📄', label: 'PDF' },
-			{ type: 'audio', icon: '🎵', label: 'Audio' },
-			{ type: 'video', icon: '🎬', label: 'Video' },
-			{ type: 'office', icon: '📊', label: 'Office' },
-			{ type: 'ipynb', icon: '📓', label: 'Jupyter' },
+			{ type: 'markdown', icon: '統', label: 'Markdown' },
+			{ type: 'text', icon: '塔', label: 'Text' },
+			{ type: 'image', icon: 'IMG', label: 'Image' },
+			{ type: 'pdf', icon: '塘', label: 'PDF' },
+			{ type: 'audio', icon: '七', label: 'Audio' },
+			{ type: 'video', icon: '汐', label: 'Video' },
+			{ type: 'office', icon: '投', label: 'Office' },
+			{ type: 'ipynb', icon: '涛', label: 'Jupyter' },
 		];
 
 		for (const ft of fileTypes) {
@@ -619,7 +731,7 @@ export class TimelineView extends ItemView {
 			btn.addEventListener('click', () => this.toggleFileTypeFilter(ft.type));
 		}
 
-		// タグフィルタ
+		// 繧ｿ繧ｰ繝輔ぅ繝ｫ繧ｿ
 		const allTags = this.cachedAllTags;
 		if (allTags.length > 0) {
 			const tagSection = filterBar.createDiv({ cls: 'timeline-filter-tags' });
@@ -662,10 +774,88 @@ export class TimelineView extends ItemView {
 				});
 			}
 		}
+
+		// フィルタープリセットセクション
+		this.renderFilterPresets(filterBar);
 	}
 
 	/**
-	 * 全カードからユニ�Eクなタグを収雁E
+	 * フィルタープリセットを描画
+	 */
+	private renderFilterPresets(container: HTMLElement): void {
+		const presetSection = container.createDiv({ cls: 'timeline-filter-presets' });
+
+		// 保存ボタン
+		const saveBtn = presetSection.createEl('button', {
+			cls: 'timeline-preset-save-btn',
+			text: '+ save',
+			attr: { 'aria-label': 'Save current filter as preset' },
+		});
+		saveBtn.addEventListener('click', () => {
+			void this.saveCurrentFilterAsPreset();
+		});
+
+		// 既存のプリセット
+		const presets = this.plugin.getFilterPresets();
+		for (const preset of presets) {
+			const presetChip = presetSection.createDiv({ cls: 'timeline-preset-chip' });
+			const presetName = presetChip.createSpan({
+				cls: 'timeline-preset-name',
+				text: preset.name,
+			});
+			presetName.addEventListener('click', () => {
+				this.loadFilterPreset(preset);
+			});
+			const deleteBtn = presetChip.createEl('button', {
+				cls: 'timeline-preset-delete-btn',
+				text: '×',
+				attr: { 'aria-label': `Delete preset "${preset.name}"` },
+			});
+			deleteBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				void this.plugin.deleteFilterPreset(preset.id);
+				void this.render();
+			});
+		}
+	}
+
+	/**
+	 * 現在のフィルタをプリセットとして保存
+	 */
+	private async saveCurrentFilterAsPreset(): Promise<void> {
+		const modal = new TextInputModal(this.app, 'Save filter preset', 'Enter preset name');
+		modal.open();
+		const name = await modal.waitForResult();
+		if (!name?.trim()) return;
+
+		const preset: FilterPreset = {
+			id: `preset-${Date.now()}`,
+			name: name.trim(),
+			searchQuery: this.searchQuery,
+			fileTypeFilters: Array.from(this.fileTypeFilters),
+			selectedTags: Array.from(this.selectedTags),
+			dateFilterStart: this.dateFilterStart,
+			dateFilterEnd: this.dateFilterEnd,
+		};
+
+		await this.plugin.saveFilterPreset(preset);
+		await this.render();
+	}
+
+	/**
+	 * プリセットを読み込み
+	 */
+	private loadFilterPreset(preset: FilterPreset): void {
+		this.searchQuery = preset.searchQuery;
+		this.fileTypeFilters = new Set(preset.fileTypeFilters);
+		this.selectedTags = new Set(preset.selectedTags);
+		this.dateFilterStart = preset.dateFilterStart;
+		this.dateFilterEnd = preset.dateFilterEnd;
+		void this.render();
+	}
+
+	/**
+	 * 蜈ｨ繧ｫ繝ｼ繝峨°繧峨Θ繝九・繧ｯ縺ｪ繧ｿ繧ｰ繧貞庶髮・
 	 */
 	private collectAllTags(): string[] {
 		const tagCounts = new Map<string, number>();
@@ -676,14 +866,14 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// 出現回数でソートして返す
+		// 蜃ｺ迴ｾ蝗樊焚縺ｧ繧ｽ繝ｼ繝医＠縺ｦ霑斐☆
 		return Array.from(tagCounts.entries())
 			.sort((a, b) => b[1] - a[1])
 			.map(([tag]) => tag);
 	}
 
 	/**
-	 * 検索入力ハンドラー�E�デバウンス付き�E�E
+	 * 讀懃ｴ｢蜈･蜉帙ワ繝ｳ繝峨Λ繝ｼ・医ョ繝舌え繝ｳ繧ｹ莉倥″・・
 	 */
 	private handleSearchInput(query: string): void {
 		if (!this.listContainerEl) {
@@ -703,11 +893,11 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * ファイルタイプフィルタをトグル
+	 * 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励ヵ繧｣繝ｫ繧ｿ繧偵ヨ繧ｰ繝ｫ
 	 */
 	private toggleFileTypeFilter(type: string): void {
 		if (this.fileTypeFilters.has(type)) {
-			// 最佁Eつは残す
+			// 譛菴・縺､縺ｯ谿九☆
 			if (this.fileTypeFilters.size > 1) {
 				this.fileTypeFilters.delete(type);
 			}
@@ -718,7 +908,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * タグフィルタをトグル
+	 * 繧ｿ繧ｰ繝輔ぅ繝ｫ繧ｿ繧偵ヨ繧ｰ繝ｫ
 	 */
 	private toggleTagFilter(tag: string): void {
 		if (this.selectedTags.has(tag)) {
@@ -730,16 +920,16 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フィルタを適用
+	 * 繝輔ぅ繝ｫ繧ｿ繧帝←逕ｨ
 	 */
 	private applyFilters(): void {
 		this.filteredCards = this.cards.filter(card => {
-			// ファイルタイプフィルタ
+			// 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励ヵ繧｣繝ｫ繧ｿ
 			if (!this.fileTypeFilters.has(card.fileType)) {
 				return false;
 			}
 
-			// タグフィルタ�E�選択タグがある場合、いずれかを含む�E�E
+			// 繧ｿ繧ｰ繝輔ぅ繝ｫ繧ｿ・磯∈謚槭ち繧ｰ縺後≠繧句ｴ蜷医√＞縺壹ｌ縺九ｒ蜷ｫ繧・・
 			if (this.selectedTags.size > 0) {
 				const hasMatchingTag = card.tags.some(tag => this.selectedTags.has(tag));
 				if (!hasMatchingTag) {
@@ -747,7 +937,7 @@ export class TimelineView extends ItemView {
 				}
 			}
 
-			// 検索クエリフィルタ
+			// 讀懃ｴ｢繧ｯ繧ｨ繝ｪ繝輔ぅ繝ｫ繧ｿ
 			if (this.searchQuery.trim()) {
 				const query = this.searchQuery.toLowerCase();
 				const titleMatch = card.title.toLowerCase().includes(query);
@@ -758,21 +948,42 @@ export class TimelineView extends ItemView {
 				}
 			}
 
+			// 日付範囲フィルタ
+			if (this.dateFilterStart || this.dateFilterEnd) {
+				const cardDate = card.createdAt;
+				if (cardDate === null) {
+					return false;  // 日付不明のカードは除外
+				}
+				if (this.dateFilterStart) {
+					const startTimestamp = new Date(this.dateFilterStart).getTime();
+					if (cardDate < startTimestamp) {
+						return false;
+					}
+				}
+				if (this.dateFilterEnd) {
+					// 終了日は23:59:59まで含める
+					const endTimestamp = new Date(this.dateFilterEnd).getTime() + 24 * 60 * 60 * 1000 - 1;
+					if (cardDate > endTimestamp) {
+						return false;
+					}
+				}
+			}
+
 			return true;
 		});
 	}
 
 	/**
-	 * カードリスト�Eみを�E描画�E�フィルタ変更時！E
+	 * 繧ｫ繝ｼ繝峨Μ繧ｹ繝医・縺ｿ繧貞・謠冗判・医ヵ繧｣繝ｫ繧ｿ螟画峩譎ゑｼ・
 	 */
 	private async renderCardList(): Promise<void> {
 		if (!this.listContainerEl) {
 			return;
 		}
-		// フィルタを適用
+		// 繝輔ぅ繝ｫ繧ｿ繧帝←逕ｨ
 		this.applyFilters();
 
-		// カード数表示を更新
+		// 繧ｫ繝ｼ繝画焚陦ｨ遉ｺ繧呈峩譁ｰ
 		const countEl = this.listContainerEl.querySelector('.timeline-count');
 		if (countEl) {
 			const countText = this.filteredCards.length === this.cards.length
@@ -781,10 +992,10 @@ export class TimelineView extends ItemView {
 			countEl.textContent = countText;
 		}
 
-		// フィルタバ�EのUI状態を更新
+		// 繝輔ぅ繝ｫ繧ｿ繝舌・縺ｮUI迥ｶ諷九ｒ譖ｴ譁ｰ
 		this.updateFilterBarUI();
 
-		// カードリスチEグリチE��を�E描画
+		// 繧ｫ繝ｼ繝峨Μ繧ｹ繝・繧ｰ繝ｪ繝・ラ繧貞・謠冗判
 		const settings = this.plugin.data.settings;
 		const isGridMode = settings.viewMode === 'grid';
 		this.listEl = this.listContainerEl.querySelector('.timeline-list, .timeline-grid') as HTMLElement;
@@ -793,7 +1004,7 @@ export class TimelineView extends ItemView {
 		this.listEl.empty();
 		this.cardElements = [];
 
-		// 無限スクロール対応：�E期表示数を決宁E
+		// 辟｡髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ蟇ｾ蠢懶ｼ壼・譛溯｡ｨ遉ｺ謨ｰ繧呈ｱｺ螳・
 		const enableInfiniteScroll = settings.enableInfiniteScroll;
 		const batchSize = settings.infiniteScrollBatchSize || 20;
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
@@ -807,15 +1018,15 @@ export class TimelineView extends ItemView {
 
 		this.focusedIndex = -1;
 
-		// フッターを更新
+		// 繝輔ャ繧ｿ繝ｼ繧呈峩譁ｰ
 		this.updateFooter();
 	}
 
 	/**
-	 * フィルタバ�EのUI状態を更新
+	 * 繝輔ぅ繝ｫ繧ｿ繝舌・縺ｮUI迥ｶ諷九ｒ譖ｴ譁ｰ
 	 */
 	private updateFilterBarUI(): void {
-		// ファイルタイプ�Eタンの状態更新
+		// 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励・繧ｿ繝ｳ縺ｮ迥ｶ諷区峩譁ｰ
 		const typeButtons = this.listContainerEl.querySelectorAll('.timeline-filter-type-btn');
 		typeButtons.forEach(btn => {
 			const type = btn.getAttribute('data-type');
@@ -824,7 +1035,7 @@ export class TimelineView extends ItemView {
 			}
 		});
 
-		// タグチップ�E状態更新
+		// 繧ｿ繧ｰ繝√ャ繝励・迥ｶ諷区峩譁ｰ
 		const tagChips = this.listContainerEl.querySelectorAll('.timeline-filter-tag-chip');
 		tagChips.forEach(chip => {
 			const tag = chip.textContent || '';
@@ -833,7 +1044,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * カード要素を作�E
+	 * 繧ｫ繝ｼ繝芽ｦ∫ｴ繧剃ｽ懈・
 	 */
 	private async createCardElement(card: TimelineCard): Promise<HTMLElement> {
 		const cardEl = createDiv({ cls: ['timeline-card', `timeline-card-type-${card.fileType}`] });
@@ -847,28 +1058,28 @@ export class TimelineView extends ItemView {
 			cardEl.addClass('timeline-card-due');
 		}
 
-		// メインコンチE��チE��域
+		// 繝｡繧､繝ｳ繧ｳ繝ｳ繝・Φ繝・伜沺
 		const contentEl = cardEl.createDiv({ cls: 'timeline-card-content' });
 
-		// Twitter風ヘッダー�E�フォルダ + タイムスタンプ！E
+		// Twitter鬚ｨ繝倥ャ繝繝ｼ・医ヵ繧ｩ繝ｫ繝 + 繧ｿ繧､繝繧ｹ繧ｿ繝ｳ繝暦ｼ・
 		const headerEl = contentEl.createDiv({ cls: 'timeline-card-header' });
 		const folderPath = card.path.includes('/') ? card.path.substring(0, card.path.lastIndexOf('/')) : '';
-		headerEl.createSpan({ cls: 'timeline-card-header-folder', text: `📁 ${folderPath || 'Root'}` });
-		headerEl.createSpan({ cls: 'timeline-card-header-separator', text: ' · ' });
+		headerEl.createSpan({ cls: 'timeline-card-header-folder', text: `刀 ${folderPath || 'Root'}` });
+		headerEl.createSpan({ cls: 'timeline-card-header-separator', text: ' ﾂｷ ' });
 		if (card.lastReviewedAt) {
 			const date = new Date(card.lastReviewedAt);
 			headerEl.createSpan({ cls: 'timeline-card-header-time', text: this.formatRelativeDate(date) });
 		} else {
 			headerEl.createSpan({ cls: 'timeline-card-header-time', text: 'New' });
 		}
-		// ヘッダー用アクションボタン�E�Ewitterモードで表示�E�E
+		// 繝倥ャ繝繝ｼ逕ｨ繧｢繧ｯ繧ｷ繝ｧ繝ｳ繝懊ち繝ｳ・・witter繝｢繝ｼ繝峨〒陦ｨ遉ｺ・・
 		{
 			const hasDraft = this.plugin.hasCommentDraft(card.path);
 			const headerCommentBtn = headerEl.createEl('button', {
 				cls: `timeline-card-header-action timeline-card-header-comment ${hasDraft ? 'has-draft' : ''}`,
-				attr: { 'aria-label': 'コメントを追加' },
+				attr: { 'aria-label': '繧ｳ繝｡繝ｳ繝医ｒ霑ｽ蜉' },
 			});
-			headerCommentBtn.textContent = '💬';
+			headerCommentBtn.textContent = '町';
 			headerCommentBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
@@ -881,9 +1092,9 @@ export class TimelineView extends ItemView {
 			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
 			const headerQuoteBtn = headerEl.createEl('button', {
 				cls: `timeline-card-header-action timeline-card-header-quote ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
-				attr: { 'aria-label': '引用ノ�EチE },
+				attr: { 'aria-label': 'Quote note' },
 			});
-			headerQuoteBtn.textContent = '🔄';
+			headerQuoteBtn.textContent = '売';
 			headerQuoteBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
@@ -894,11 +1105,11 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// リンクボタン - Twitter ヘッダー用
+		// 繝ｪ繝ｳ繧ｯ繝懊ち繝ｳ - Twitter 繝倥ャ繝繝ｼ逕ｨ
 		{
 			const headerLinkBtn = headerEl.createEl('button', {
 				cls: 'timeline-card-header-action timeline-card-header-link',
-				attr: { 'aria-label': 'ノ�Eトをリンク' },
+				attr: { 'aria-label': '繝弱・繝医ｒ繝ｪ繝ｳ繧ｯ' },
 			});
 			headerLinkBtn.textContent = '\uD83D\uDD17';
 			headerLinkBtn.addEventListener('click', (e) => {
@@ -909,30 +1120,30 @@ export class TimelineView extends ItemView {
 				}
 			});
 		}
-		// ブックマ�Eクアイコン�E��EチE��ー用�E�E
+		// 繝悶ャ繧ｯ繝槭・繧ｯ繧｢繧､繧ｳ繝ｳ・医・繝・ム繝ｼ逕ｨ・・
 		const isBookmarked = this.isFileBookmarked(card.path);
 		const headerBookmarkBtn = headerEl.createEl('button', {
 			cls: `timeline-card-header-bookmark ${isBookmarked ? 'is-bookmarked' : ''}`,
 		});
-		headerBookmarkBtn.textContent = isBookmarked ? '☁E : '☁E;
+		headerBookmarkBtn.textContent = isBookmarked ? '★' : '☆';
 		headerBookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				headerBookmarkBtn.textContent = nowBookmarked ? '☁E : '☁E;
+				headerBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-				// 同期�E�タイトル行�Eブックマ�Eクボタンも更新
+				// 蜷梧悄・壹ち繧､繝医Ν陦後・繝悶ャ繧ｯ繝槭・繧ｯ繝懊ち繝ｳ繧よ峩譁ｰ
 				const titleBookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
 				if (titleBookmarkBtn) {
-					titleBookmarkBtn.textContent = nowBookmarked ? '☁E : '☁E;
+					titleBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 					titleBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 				}
 			});
 		});
 
-		// タイトル衁E
+		// 繧ｿ繧､繝医Ν陦・
 		const titleRow = contentEl.createDiv({ cls: 'timeline-card-title-row' });
 
-		// ファイルタイプバチE���E�非マ�Eクダウンの場合！E
+		// 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励ヰ繝・ず・磯撼繝槭・繧ｯ繝繧ｦ繝ｳ縺ｮ蝣ｴ蜷茨ｼ・
 		if (card.fileType !== 'markdown') {
 			const typeIcon = this.getFileTypeIcon(card.fileType);
 			titleRow.createSpan({
@@ -944,9 +1155,9 @@ export class TimelineView extends ItemView {
 		const titleEl = titleRow.createDiv({ cls: 'timeline-card-title' });
 		titleEl.textContent = card.title;
 
-		// バッジ
+		// 繝舌ャ繧ｸ
 		if (card.pinned) {
-			titleRow.createSpan({ cls: 'timeline-badge timeline-badge-pin', text: '📌' });
+			titleRow.createSpan({ cls: 'timeline-badge timeline-badge-pin', text: '東' });
 		}
 		if (card.isNew) {
 			titleRow.createSpan({ cls: 'timeline-badge timeline-badge-new', text: 'NEW' });
@@ -955,14 +1166,14 @@ export class TimelineView extends ItemView {
 			titleRow.createSpan({ cls: 'timeline-badge timeline-badge-due', text: 'DUE' });
 		}
 
-		// コメント�Eタン - Classic用
+		// 繧ｳ繝｡繝ｳ繝医・繧ｿ繝ｳ - Classic逕ｨ
 		{
 			const hasDraft = this.plugin.hasCommentDraft(card.path);
 			const commentBtn = titleRow.createEl('button', {
 				cls: `timeline-comment-btn ${hasDraft ? 'has-draft' : ''}`,
-				attr: { 'aria-label': 'コメントを追加' },
+				attr: { 'aria-label': '繧ｳ繝｡繝ｳ繝医ｒ霑ｽ蜉' },
 			});
-			commentBtn.textContent = '💬';
+			commentBtn.textContent = '町';
 			commentBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
@@ -973,14 +1184,14 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// 引用ノ�Eト�Eタン - Classic用
+		// 蠑慕畑繝弱・繝医・繧ｿ繝ｳ - Classic逕ｨ
 		{
 			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
 			const quoteNoteBtn = titleRow.createEl('button', {
 				cls: `timeline-quote-note-btn ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
-				attr: { 'aria-label': '引用ノ�EチE },
+				attr: { 'aria-label': 'Quote note' },
 			});
-			quoteNoteBtn.textContent = '🔄';
+			quoteNoteBtn.textContent = '売';
 			quoteNoteBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
@@ -991,11 +1202,11 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// リンクボタン - Classic用
+		// 繝ｪ繝ｳ繧ｯ繝懊ち繝ｳ - Classic逕ｨ
 		{
 			const linkBtn = titleRow.createEl('button', {
 				cls: 'timeline-link-note-btn',
-				attr: { 'aria-label': 'ノ�Eトをリンク' },
+				attr: { 'aria-label': '繝弱・繝医ｒ繝ｪ繝ｳ繧ｯ' },
 			});
 			linkBtn.textContent = '\uD83D\uDD17';
 			linkBtn.addEventListener('click', (e) => {
@@ -1007,30 +1218,30 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// ブックマ�Eクボタン - Classic用
+		// 繝悶ャ繧ｯ繝槭・繧ｯ繝懊ち繝ｳ - Classic逕ｨ
 		const bookmarkBtn = titleRow.createEl('button', {
 			cls: `timeline-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
 			attr: { 'aria-label': isBookmarked ? 'Remove bookmark' : 'Add bookmark' },
 		});
-		bookmarkBtn.textContent = isBookmarked ? '☁E : '☁E;
+		bookmarkBtn.textContent = isBookmarked ? '★' : '☆';
 		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				bookmarkBtn.textContent = nowBookmarked ? '☁E : '☁E;
+				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 				bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
-				// 同期�E��EチE��ーのブックマ�Eクボタンも更新
-				headerBookmarkBtn.textContent = nowBookmarked ? '☁E : '☁E;
+				// 蜷梧悄・壹・繝・ム繝ｼ縺ｮ繝悶ャ繧ｯ繝槭・繧ｯ繝懊ち繝ｳ繧よ峩譁ｰ
+				headerBookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			});
 		});
 
-		// プレビュー
+		// 繝励Ξ繝薙Η繝ｼ
 		const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
 		if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
-			// 脚注記法をエスケープ（�Eレビューでは参�E先がなぁE��めE��E
+			// 閼壽ｳｨ險俶ｳ輔ｒ繧ｨ繧ｹ繧ｱ繝ｼ繝暦ｼ医・繝ｬ繝薙Η繝ｼ縺ｧ縺ｯ蜿ら・蜈医′縺ｪ縺・◆繧・ｼ・
 			const previewText = card.preview.replace(/\[\^/g, '\\[^');
-			// マ�Eクダウンをレンダリング
+			// 繝槭・繧ｯ繝繧ｦ繝ｳ繧偵Ξ繝ｳ繝繝ｪ繝ｳ繧ｰ
 			await MarkdownRenderer.render(
 				this.app,
 				previewText,
@@ -1038,44 +1249,45 @@ export class TimelineView extends ItemView {
 				card.path,
 				this.renderComponent
 			);
-			// ipynbの場合�Eクラスを追加
+			// ipynb縺ｮ蝣ｴ蜷医・繧ｯ繝ｩ繧ｹ繧定ｿｽ蜉
 			if (card.fileType === 'ipynb') {
 				previewEl.addClass('timeline-card-preview-ipynb');
 			}
 		} else {
-			// 非�EークダウンはプレーンチE��スト表示
+			// 髱槭・繝ｼ繧ｯ繝繧ｦ繝ｳ縺ｯ繝励Ξ繝ｼ繝ｳ繝・く繧ｹ繝郁｡ｨ遉ｺ
 			previewEl.addClass('timeline-card-preview-file');
 			previewEl.createSpan({
 				cls: 'timeline-file-preview-text',
 				text: card.preview,
 			});
-			// 拡張子バチE��
+			// 諡｡蠑ｵ蟄舌ヰ繝・ず
 			previewEl.createSpan({
 				cls: 'timeline-file-extension',
 				text: `.${card.extension}`,
 			});
 		}
 
-		// サムネイル画僁E/ PDF埋め込み
+		// 繧ｵ繝繝阪う繝ｫ逕ｻ蜒・/ PDF蝓九ａ霎ｼ縺ｿ
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
 				await this.renderPdfCardPreview(thumbnailEl, card, false);
 			} else if (card.firstImagePath.startsWith('data:')) {
-				// Base64 data URI�E�Epynbの出力画像など�E�E				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-thumbnail-ipynb' });
+				// Base64 data URI・・pynb縺ｮ蜃ｺ蜉帷判蜒上↑縺ｩ・・
+				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-thumbnail-ipynb' });
 				thumbnailEl.createEl('img', {
 					attr: { src: card.firstImagePath, alt: 'notebook output' },
 				});
 			} else {
-				// 画像サムネイル
+				// 逕ｻ蜒上し繝繝阪う繝ｫ
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail' });
 				if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
-					// 外部URL
+					// 螟夜ΚURL
 					thumbnailEl.createEl('img', {
 						attr: { src: card.firstImagePath, alt: 'thumbnail' },
 					});
 				} else {
-					// 冁E��ファイル
+					// 蜀・Κ繝輔ぃ繧､繝ｫ
 					const imageFile = this.app.vault.getAbstractFileByPath(card.firstImagePath);
 					if (imageFile && imageFile instanceof TFile) {
 						const resourcePath = this.app.vault.getResourcePath(imageFile);
@@ -1087,14 +1299,14 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// リンクリスチE
+		// 繝ｪ繝ｳ繧ｯ繝ｪ繧ｹ繝・
 		if (card.outgoingLinks.length > 0 || card.backlinks.length > 0) {
 			const linksEl = contentEl.createDiv({ cls: 'timeline-card-links' });
 
-			// アウトゴーイングリンク
+			// 繧｢繧ｦ繝医ざ繝ｼ繧､繝ｳ繧ｰ繝ｪ繝ｳ繧ｯ
 			if (card.outgoingLinks.length > 0) {
 				const outgoingEl = linksEl.createDiv({ cls: 'timeline-links-section' });
-				outgoingEl.createSpan({ cls: 'timeline-links-label', text: 'ↁELinks' });
+				outgoingEl.createSpan({ cls: 'timeline-links-label', text: '竊・Links' });
 				const outgoingList = outgoingEl.createDiv({ cls: 'timeline-links-list' });
 				for (const link of card.outgoingLinks.slice(0, 5)) {
 					const linkEl = outgoingList.createSpan({
@@ -1117,10 +1329,10 @@ export class TimelineView extends ItemView {
 				}
 			}
 
-			// バックリンク
+			// 繝舌ャ繧ｯ繝ｪ繝ｳ繧ｯ
 			if (card.backlinks.length > 0) {
 				const backlinksEl = linksEl.createDiv({ cls: 'timeline-links-section' });
-				backlinksEl.createSpan({ cls: 'timeline-links-label', text: 'ↁEBacklinks' });
+				backlinksEl.createSpan({ cls: 'timeline-links-label', text: '竊・Backlinks' });
 				const backlinksList = backlinksEl.createDiv({ cls: 'timeline-links-list' });
 				for (const link of card.backlinks.slice(0, 5)) {
 					const linkEl = backlinksList.createSpan({
@@ -1144,22 +1356,22 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// メタ惁E���E�Elassic用�E�E
+		// 繝｡繧ｿ諠・ｱ・・lassic逕ｨ・・
 		if (this.plugin.data.settings.showMeta) {
 			const metaEl = contentEl.createDiv({ cls: 'timeline-card-meta' });
 
 			if (card.lastReviewedAt) {
 				const date = new Date(card.lastReviewedAt);
 				const dateStr = this.formatRelativeDate(date);
-				metaEl.createSpan({ text: `👁 ${dateStr}` });
+				metaEl.createSpan({ text: `早 ${dateStr}` });
 			}
 
 			if (card.reviewCount > 0) {
-				metaEl.createSpan({ text: `ÁE{card.reviewCount}` });
+				metaEl.createSpan({ text: `ﾃ・{card.reviewCount}` });
 			}
 
 			if (card.interval > 0) {
-				metaEl.createSpan({ cls: 'timeline-card-interval', text: `📅 ${card.interval}d` });
+				metaEl.createSpan({ cls: 'timeline-card-interval', text: `套 ${card.interval}d` });
 			}
 
 			if (card.tags.length > 0) {
@@ -1168,16 +1380,16 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// Twitter風アクションバ�E
+		// Twitter鬚ｨ繧｢繧ｯ繧ｷ繝ｧ繝ｳ繝舌・
 		const actionsEl = contentEl.createDiv({ cls: 'timeline-card-actions' });
 
-		// コメントアクション
+		// 繧ｳ繝｡繝ｳ繝医い繧ｯ繧ｷ繝ｧ繝ｳ
 		{
 			const hasDraft = this.plugin.hasCommentDraft(card.path);
 			const commentAction = actionsEl.createEl('button', {
 				cls: `timeline-action-btn timeline-action-comment ${hasDraft ? 'has-draft' : ''}`,
 			});
-			commentAction.createSpan({ text: '💬' });
+			commentAction.createSpan({ text: '町' });
 			commentAction.createSpan({ cls: 'timeline-action-label', text: 'Comment' });
 			commentAction.addEventListener('click', (e) => {
 				e.stopPropagation();
@@ -1189,13 +1401,13 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// 引用アクション
+		// 蠑慕畑繧｢繧ｯ繧ｷ繝ｧ繝ｳ
 		{
 			const hasQuoteNoteDraft = this.plugin.hasQuoteNoteDraft(card.path);
 			const quoteAction = actionsEl.createEl('button', {
 				cls: `timeline-action-btn timeline-action-quote ${hasQuoteNoteDraft ? 'has-draft' : ''}`,
 			});
-			quoteAction.createSpan({ text: '🔄' });
+			quoteAction.createSpan({ text: '売' });
 			quoteAction.createSpan({ cls: 'timeline-action-label', text: 'Quote' });
 			quoteAction.addEventListener('click', (e) => {
 				e.stopPropagation();
@@ -1207,7 +1419,7 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// リンクアクション
+		// 繝ｪ繝ｳ繧ｯ繧｢繧ｯ繧ｷ繝ｧ繝ｳ
 		{
 			const linkAction = actionsEl.createEl('button', {
 				cls: 'timeline-action-btn timeline-action-link',
@@ -1223,14 +1435,14 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// レビュー数アクション
+		// 繝ｬ繝薙Η繝ｼ謨ｰ繧｢繧ｯ繧ｷ繝ｧ繝ｳ
 		if (card.reviewCount > 0) {
 			const reviewAction = actionsEl.createDiv({ cls: 'timeline-action-btn timeline-action-reviews' });
-			reviewAction.createSpan({ text: '⭁E });
+			reviewAction.createSpan({ text: '★' });
 			reviewAction.createSpan({ cls: 'timeline-action-label', text: `${card.reviewCount} reviews` });
 		}
 
-		// タグ表示�E�Ewitter風�E�E
+		// 繧ｿ繧ｰ陦ｨ遉ｺ・・witter鬚ｨ・・
 		if (card.tags.length > 0) {
 			const tagsAction = actionsEl.createDiv({ cls: 'timeline-action-tags' });
 			for (const tag of card.tags.slice(0, 2)) {
@@ -1241,34 +1453,34 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// クリチE��/タチE�Eでノ�Eトを開く
+		// 繧ｯ繝ｪ繝・け/繧ｿ繝・・縺ｧ繝弱・繝医ｒ髢九￥
 		contentEl.addEventListener('click', () => {
 			void this.openNote(card);
 		});
 
-		// 右クリチE��でコンチE��ストメニュー
+		// 蜿ｳ繧ｯ繝ｪ繝・け縺ｧ繧ｳ繝ｳ繝・く繧ｹ繝医Γ繝九Η繝ｼ
 		cardEl.addEventListener('contextmenu', (e) => {
 			e.preventDefault();
 			const file = this.app.vault.getAbstractFileByPath(card.path);
 			if (file && file instanceof TFile) {
 				const menu = new Menu();
 
-				// Obsidianの標準ファイルメニューをトリガー
+				// Obsidian縺ｮ讓呎ｺ悶ヵ繧｡繧､繝ｫ繝｡繝九Η繝ｼ繧偵ヨ繝ｪ繧ｬ繝ｼ
 				this.app.workspace.trigger('file-menu', menu, file, 'file-explorer-context-menu', null);
 
 				menu.showAtMouseEvent(e);
 			}
 		});
 
-		// 難易度ボタン�E�ERSモードまた�E設定で有効時！E
+		// 髮｣譏灘ｺｦ繝懊ち繝ｳ・・RS繝｢繝ｼ繝峨∪縺溘・險ｭ螳壹〒譛牙柑譎ゑｼ・
 		const settings = this.plugin.data.settings;
 		if (settings.showDifficultyButtons) {
 			const buttonsEl = cardEl.createDiv({ cls: 'timeline-difficulty-buttons' });
 			this.createDifficultyButtons(buttonsEl, card);
 		} else {
-			// 既読ショートカチE���E�右端をタチE�E�E�E
+			// 譌｢隱ｭ繧ｷ繝ｧ繝ｼ繝医き繝・ヨ・亥承遶ｯ繧偵ち繝・・・・
 			const markReadBtn = cardEl.createDiv({ cls: 'timeline-mark-read' });
-			markReadBtn.textContent = '✁E;
+			markReadBtn.textContent = 'Read';
 			markReadBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				void this.plugin.markAsReviewed(card.path).then(() => {
@@ -1281,7 +1493,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * グリチE��カード要素を作�E�E�画像中忁E�E表示�E�E
+	 * 繧ｰ繝ｪ繝・ラ繧ｫ繝ｼ繝芽ｦ∫ｴ繧剃ｽ懈・・育判蜒丈ｸｭ蠢・・陦ｨ遉ｺ・・
 	 */
 	private async createGridCardElement(card: TimelineCard): Promise<HTMLElement> {
 		const cardEl = createDiv({ cls: ['timeline-grid-card', `timeline-card-type-${card.fileType}`] });
@@ -1295,14 +1507,15 @@ export class TimelineView extends ItemView {
 			cardEl.addClass('timeline-card-due');
 		}
 
-		// サムネイル/プレビュー領域
+		// 繧ｵ繝繝阪う繝ｫ/繝励Ξ繝薙Η繝ｼ鬆伜沺
 		const thumbnailEl = cardEl.createDiv({ cls: 'timeline-grid-card-thumbnail' });
 		if (card.firstImagePath) {
 			if (card.fileType === 'pdf') {
 				thumbnailEl.addClass('timeline-grid-card-pdf-embed');
 				await this.renderPdfCardPreview(thumbnailEl, card, true);
 			} else if (card.firstImagePath.startsWith('data:')) {
-				// Base64 data URI�E�Epynbの出力画像など�E�E				thumbnailEl.addClass('timeline-grid-card-thumbnail-ipynb');
+				// Base64 data URI・・pynb縺ｮ蜃ｺ蜉帷判蜒上↑縺ｩ・・
+				thumbnailEl.addClass('timeline-grid-card-thumbnail-ipynb');
 				thumbnailEl.createEl('img', {
 					attr: { src: card.firstImagePath, alt: 'notebook output' },
 				});
@@ -1320,7 +1533,7 @@ export class TimelineView extends ItemView {
 				}
 			}
 		} else {
-			// 画像がなぁE��合�Eファイルタイプアイコンを表示
+			// 逕ｻ蜒上′縺ｪ縺・ｴ蜷医・繝輔ぃ繧､繝ｫ繧ｿ繧､繝励い繧､繧ｳ繝ｳ繧定｡ｨ遉ｺ
 			const icon = this.getFileTypeIcon(card.fileType);
 			thumbnailEl.createDiv({
 				cls: 'timeline-grid-card-icon',
@@ -1328,7 +1541,7 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// ファイルタイプバチE��
+		// 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励ヰ繝・ず
 		if (card.fileType !== 'markdown') {
 			const typeIcon = this.getFileTypeIcon(card.fileType);
 			thumbnailEl.createSpan({
@@ -1337,31 +1550,31 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// オーバ�Eレイ�E��Eバ�E時に表示�E�E
+		// 繧ｪ繝ｼ繝舌・繝ｬ繧､・医・繝舌・譎ゅ↓陦ｨ遉ｺ・・
 		const overlayEl = thumbnailEl.createDiv({ cls: 'timeline-grid-card-overlay' });
 
-		// ブックマ�Eクボタン
+		// 繝悶ャ繧ｯ繝槭・繧ｯ繝懊ち繝ｳ
 		const isBookmarked = this.isFileBookmarked(card.path);
 		const bookmarkBtn = overlayEl.createEl('button', {
 			cls: `timeline-grid-bookmark-btn ${isBookmarked ? 'is-bookmarked' : ''}`,
 		});
-		bookmarkBtn.textContent = isBookmarked ? '☁E : '☁E;
+		bookmarkBtn.textContent = isBookmarked ? '★' : '☆';
 		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				bookmarkBtn.textContent = nowBookmarked ? '☁E : '☁E;
+				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			});
 		});
 
-		// タイトル
+		// 繧ｿ繧､繝医Ν
 		const infoEl = cardEl.createDiv({ cls: 'timeline-grid-card-info' });
 		const titleEl = infoEl.createDiv({ cls: 'timeline-grid-card-title' });
 		titleEl.textContent = card.title;
 
-		// バッジ
+		// 繝舌ャ繧ｸ
 		if (card.pinned) {
-			titleEl.createSpan({ cls: 'timeline-badge timeline-badge-pin', text: '📌' });
+			titleEl.createSpan({ cls: 'timeline-badge timeline-badge-pin', text: '東' });
 		}
 		if (card.isNew) {
 			titleEl.createSpan({ cls: 'timeline-badge timeline-badge-new', text: 'NEW' });
@@ -1370,7 +1583,7 @@ export class TimelineView extends ItemView {
 			titleEl.createSpan({ cls: 'timeline-badge timeline-badge-due', text: 'DUE' });
 		}
 
-		// タグ�E�最大2つまで表示�E�E
+		// 繧ｿ繧ｰ・域怙螟ｧ2縺､縺ｾ縺ｧ陦ｨ遉ｺ・・
 		if (card.tags.length > 0) {
 			const tagsEl = infoEl.createDiv({ cls: 'timeline-grid-card-tags' });
 			for (const tag of card.tags.slice(0, 2)) {
@@ -1381,12 +1594,12 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// クリチE��でノ�Eトを開く
+		// 繧ｯ繝ｪ繝・け縺ｧ繝弱・繝医ｒ髢九￥
 		cardEl.addEventListener('click', () => {
 			void this.openNote(card);
 		});
 
-		// 右クリチE��でコンチE��ストメニュー
+		// 蜿ｳ繧ｯ繝ｪ繝・け縺ｧ繧ｳ繝ｳ繝・く繧ｹ繝医Γ繝九Η繝ｼ
 		cardEl.addEventListener('contextmenu', (e) => {
 			e.preventDefault();
 			const file = this.app.vault.getAbstractFileByPath(card.path);
@@ -1401,12 +1614,12 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * PDFオープンボタンを作�E
+	 * PDF繧ｪ繝ｼ繝励Φ繝懊ち繝ｳ繧剃ｽ懈・
 	 */
 	private createPdfOpenButton(container: HTMLElement, card: TimelineCard): void {
 		const openBtn = container.createEl('button', {
 			cls: 'timeline-pdf-open-btn',
-			text: '📄 Open',
+			text: '📄 open',
 		});
 		openBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -1415,7 +1628,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * PDFカード�Eレビューを描画�E�Eesktop: 埋め込み、Mobile: フォールバック�E�E	 */
+	 * PDF繧ｫ繝ｼ繝峨・繝ｬ繝薙Η繝ｼ繧呈緒逕ｻ・・esktop: 蝓九ａ霎ｼ縺ｿ縲｀obile: 繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ・・	 */
 	private async renderPdfCardPreview(
 		container: HTMLElement,
 		card: TimelineCard,
@@ -1480,7 +1693,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 埋め込みPDF要素の描画可否を確誁E	 */
+	 * 蝓九ａ霎ｼ縺ｿPDF隕∫ｴ縺ｮ謠冗判蜿ｯ蜷ｦ繧堤｢ｺ隱・	 */
 	private async ensurePdfRendered(embedHost: HTMLElement): Promise<boolean> {
 		await this.waitForAnimationFrame();
 		await this.waitForAnimationFrame();
@@ -1490,7 +1703,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 埋め込みPDF要素を検�E
+	 * 蝓九ａ霎ｼ縺ｿPDF隕∫ｴ繧呈､懷・
 	 */
 	private findRenderedPdfElement(container: HTMLElement): HTMLElement | null {
 		const selectors = [
@@ -1511,14 +1724,14 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 要素が可視サイズを持ってぁE��か判宁E	 */
+	 * 隕∫ｴ縺悟庄隕悶し繧､繧ｺ繧呈戟縺｣縺ｦ縺・ｋ縺句愛螳・	 */
 	private hasVisibleSize(element: HTMLElement): boolean {
 		const rect = element.getBoundingClientRect();
 		return rect.width > 0 && rect.height > 0;
 	}
 
 	/**
-	 * PDFの初期ズームめE00%に固宁E	 */
+	 * PDF縺ｮ蛻晄悄繧ｺ繝ｼ繝繧・00%縺ｫ蝗ｺ螳・	 */
 	private applyInitialPdfZoom(container: HTMLElement): void {
 		const zoomSelectors = [
 			'embed[type="application/pdf"][src]',
@@ -1527,7 +1740,7 @@ export class TimelineView extends ItemView {
 		];
 
 		for (const selector of zoomSelectors) {
-			for (const target of container.querySelectorAll(selector)) {
+			for (const target of Array.from(container.querySelectorAll(selector))) {
 				if (target instanceof HTMLEmbedElement || target instanceof HTMLIFrameElement) {
 					const currentSrc = target.getAttribute('src');
 					if (!currentSrc) continue;
@@ -1551,7 +1764,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * URLフラグメントに zoom=100 を適用
+	 * URL繝輔Λ繧ｰ繝｡繝ｳ繝医↓ zoom=100 繧帝←逕ｨ
 	 */
 	private withPdfZoom100(url: string): string {
 		const [base, hash = ''] = url.split('#', 2);
@@ -1578,7 +1791,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * PDFプレビューのフォールバックを描画
+	 * PDF繝励Ξ繝薙Η繝ｼ縺ｮ繝輔か繝ｼ繝ｫ繝舌ャ繧ｯ繧呈緒逕ｻ
 	 */
 	private renderPdfFallback(
 		container: HTMLElement,
@@ -1591,7 +1804,7 @@ export class TimelineView extends ItemView {
 
 		const fallbackEl = container.createDiv({ cls: 'timeline-pdf-fallback timeline-pdf-fallback-visible' });
 		fallbackEl.addClass(isGridMode ? 'timeline-pdf-fallback-grid' : 'timeline-pdf-fallback-list');
-		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-icon', text: '📄' });
+		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-icon', text: '塘' });
 		const fileName = card.firstImagePath?.split('/').pop() ?? 'PDF';
 		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-name', text: fileName });
 		fallbackEl.createDiv({ cls: 'timeline-pdf-fallback-hint', text: message });
@@ -1600,7 +1813,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 次フレームまで征E��E	 */
+	 * 谺｡繝輔Ξ繝ｼ繝縺ｾ縺ｧ蠕・ｩ・	 */
 	private waitForAnimationFrame(): Promise<void> {
 		return new Promise((resolve) => {
 			window.requestAnimationFrame(() => resolve());
@@ -1608,7 +1821,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 難易度ボタンを作�E
+	 * 髮｣譏灘ｺｦ繝懊ち繝ｳ繧剃ｽ懈・
 	 */
 	private createDifficultyButtons(container: HTMLElement, card: TimelineCard): void {
 		const log = this.plugin.data.reviewLogs[card.path];
@@ -1639,7 +1852,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 難易度ボタンをUndoボタンに置揁E
+	 * 髮｣譏灘ｺｦ繝懊ち繝ｳ繧旦ndo繝懊ち繝ｳ縺ｫ鄂ｮ謠・
 	 */
 	private replaceWithUndoButton(container: HTMLElement, card: TimelineCard): void {
 		container.empty();
@@ -1654,9 +1867,9 @@ export class TimelineView extends ItemView {
 			e.stopPropagation();
 			void this.plugin.undoRating(card.path).then((success) => {
 				if (success) {
-					// レビュー済みクラスを解除
+					// 繝ｬ繝薙Η繝ｼ貂医∩繧ｯ繝ｩ繧ｹ繧定ｧ｣髯､
 					container.closest('.timeline-card')?.removeClass('timeline-card-reviewed');
-					// Undoクラスを除去し、E��易度ボタンを�E描画
+					// Undo繧ｯ繝ｩ繧ｹ繧帝勁蜴ｻ縺励・屮譏灘ｺｦ繝懊ち繝ｳ繧貞・謠冗判
 					container.removeClass('timeline-difficulty-undo');
 					container.empty();
 					this.createDifficultyButtons(container, card);
@@ -1666,84 +1879,84 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * ノ�Eトを開く
+	 * 繝弱・繝医ｒ髢九￥
 	 */
 	private async openNote(card: TimelineCard): Promise<void> {
 		const file = this.app.vault.getAbstractFileByPath(card.path);
 		if (!file || !(file instanceof TFile)) return;
 
 		if (Platform.isMobile) {
-			// Mobile: 新しいleafで開く
+			// Mobile: 譁ｰ縺励＞leaf縺ｧ髢九￥
 			await this.app.workspace.getLeaf().openFile(file);
 			return;
 		}
 
-		// Desktop: 直前にアクチE��ブだったleafの隣に新しいタブとして開く
+		// Desktop: 逶ｴ蜑阪↓繧｢繧ｯ繝・ぅ繝悶□縺｣縺殕eaf縺ｮ髫｣縺ｫ譁ｰ縺励＞繧ｿ繝悶→縺励※髢九￥
 		let targetLeaf: WorkspaceLeaf;
 
 		if (this.previousActiveLeaf) {
-			// 直前�Eleafと同じタブグループに新しいタブを作�E
+			// 逶ｴ蜑阪・leaf縺ｨ蜷後§繧ｿ繝悶げ繝ｫ繝ｼ繝励↓譁ｰ縺励＞繧ｿ繝悶ｒ菴懈・
 			const parent = this.previousActiveLeaf.parent;
 			if (parent) {
-				// parent は WorkspaceTabs | WorkspaceMobileDrawer だぁEcreateLeafInParent は WorkspaceSplit を期征E��る。実行時は動作するため型アサーションで対忁E
+				// parent 縺ｯ WorkspaceTabs | WorkspaceMobileDrawer 縺縺・createLeafInParent 縺ｯ WorkspaceSplit 繧呈悄蠕・☆繧九ょｮ溯｡梧凾縺ｯ蜍穂ｽ懊☆繧九◆繧∝梛繧｢繧ｵ繝ｼ繧ｷ繝ｧ繝ｳ縺ｧ蟇ｾ蠢・
 				targetLeaf = this.app.workspace.createLeafInParent(parent as unknown as WorkspaceSplit, -1);
 			} else {
 				targetLeaf = this.app.workspace.getLeaf('tab');
 			}
 		} else {
-			// 直前�EleafがなぁE��合�E、タイムライン以外�Eleafを探して同じタブグループに開く
+			// 逶ｴ蜑阪・leaf縺後↑縺・ｴ蜷医・縲√ち繧､繝繝ｩ繧､繝ｳ莉･螟悶・leaf繧呈爾縺励※蜷後§繧ｿ繝悶げ繝ｫ繝ｼ繝励↓髢九￥
 			const adjacentLeaf = this.findAdjacentLeaf(this.leaf);
 			if (adjacentLeaf) {
 				const parent = adjacentLeaf.parent;
 				if (parent) {
-					// parent は WorkspaceTabs | WorkspaceMobileDrawer だぁEcreateLeafInParent は WorkspaceSplit を期征E��る。実行時は動作するため型アサーションで対忁E
+					// parent 縺ｯ WorkspaceTabs | WorkspaceMobileDrawer 縺縺・createLeafInParent 縺ｯ WorkspaceSplit 繧呈悄蠕・☆繧九ょｮ溯｡梧凾縺ｯ蜍穂ｽ懊☆繧九◆繧∝梛繧｢繧ｵ繝ｼ繧ｷ繝ｧ繝ｳ縺ｧ蟇ｾ蠢・
 					targetLeaf = this.app.workspace.createLeafInParent(parent as unknown as WorkspaceSplit, -1);
 				} else {
 					targetLeaf = this.app.workspace.getLeaf('tab');
 				}
 			} else {
-				// 隣のleafがなければ、右に刁E��して開く
+				// 髫｣縺ｮleaf縺後↑縺代ｌ縺ｰ縲∝承縺ｫ蛻・牡縺励※髢九￥
 				targetLeaf = this.app.workspace.getLeaf('split');
 			}
 		}
 
 		await targetLeaf.openFile(file);
 
-		// フォーカスをノートに移勁E
+		// 繝輔か繝ｼ繧ｫ繧ｹ繧偵ヮ繝ｼ繝医↓遘ｻ蜍・
 		this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
 	}
 
 	/**
-	 * タイムライン以外�E隣接するleafを探ぁE
+	 * 繧ｿ繧､繝繝ｩ繧､繝ｳ莉･螟悶・髫｣謗･縺吶ｋleaf繧呈爾縺・
 	 */
 	private findAdjacentLeaf(timelineLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
 		let targetLeaf: WorkspaceLeaf | null = null;
 		let foundMarkdownLeaf: WorkspaceLeaf | null = null;
 
 		this.app.workspace.iterateAllLeaves((leaf) => {
-			// タイムライン自身は除夁E
+			// 繧ｿ繧､繝繝ｩ繧､繝ｳ閾ｪ霄ｫ縺ｯ髯､螟・
 			if (leaf === timelineLeaf) return;
 
-			// タイムラインビューは除夁E
+			// 繧ｿ繧､繝繝ｩ繧､繝ｳ繝薙Η繝ｼ縺ｯ髯､螟・
 			if (leaf.view.getViewType() === TIMELINE_VIEW_TYPE) return;
 
-			// Markdownビュー�E�ノート）を優允E
+			// Markdown繝薙Η繝ｼ・医ヮ繝ｼ繝茨ｼ峨ｒ蜆ｪ蜈・
 			if (leaf.view.getViewType() === 'markdown') {
 				foundMarkdownLeaf = leaf;
 			}
 
-			// 空のビューまた�Eそ�E他�Eビュー
+			// 遨ｺ縺ｮ繝薙Η繝ｼ縺ｾ縺溘・縺昴・莉悶・繝薙Η繝ｼ
 			if (!targetLeaf) {
 				targetLeaf = leaf;
 			}
 		});
 
-		// Markdownビューがあれ�Eそれを優允E
+		// Markdown繝薙Η繝ｼ縺後≠繧後・縺昴ｌ繧貞━蜈・
 		return foundMarkdownLeaf || targetLeaf;
 	}
 
 	/**
-	 * 相対日付フォーマッチE
+	 * 逶ｸ蟇ｾ譌･莉倥ヵ繧ｩ繝ｼ繝槭ャ繝・
 	 */
 	private formatRelativeDate(date: Date): string {
 		const now = new Date();
@@ -1758,37 +1971,37 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * ファイルタイプアイコンを取征E
+	 * 繝輔ぃ繧､繝ｫ繧ｿ繧､繝励い繧､繧ｳ繝ｳ繧貞叙蠕・
 	 */
 	private getFileTypeIcon(fileType: string): string {
 		switch (fileType) {
-			case 'text': return '📃';
-			case 'image': return '🖼�E�E;
-			case 'pdf': return '📄';
-			case 'audio': return '🎵';
-			case 'video': return '🎬';
-			case 'office': return '📊';
-			case 'ipynb': return '📓';
-			default: return '📁';
+			case 'text': return '塔';
+			case 'image': return 'IMG';
+			case 'pdf': return '塘';
+			case 'audio': return '七';
+			case 'video': return '汐';
+			case 'office': return '投';
+			case 'ipynb': return '涛';
+			default: return '刀';
 		}
 	}
 
 	/**
-	 * ファイルがブチE��マ�EクされてぁE��か確認（キャチE��ュ使用�E�E
+	 * 繝輔ぃ繧､繝ｫ縺後ヶ繝・け繝槭・繧ｯ縺輔ｌ縺ｦ縺・ｋ縺狗｢ｺ隱搾ｼ医く繝｣繝・す繝･菴ｿ逕ｨ・・
 	 */
 	private isFileBookmarked(path: string): boolean {
-		// キャチE��ュがあれ�E使用�E�E(1)ルチE��アチE�E�E�E
+		// 繧ｭ繝｣繝・す繝･縺後≠繧後・菴ｿ逕ｨ・・(1)繝ｫ繝・け繧｢繝・・・・
 		if (this.cachedBookmarkedPaths) {
 			return this.cachedBookmarkedPaths.has(path);
 		}
 
-		// キャチE��ュがなぁE��合�EdataLayerから取征E
+		// 繧ｭ繝｣繝・す繝･縺後↑縺・ｴ蜷医・dataLayer縺九ｉ蜿門ｾ・
 		this.cachedBookmarkedPaths = getBookmarkedPaths(this.app);
 		return this.cachedBookmarkedPaths.has(path);
 	}
 
 	/**
-	 * ブックマ�Eクをトグル
+	 * 繝悶ャ繧ｯ繝槭・繧ｯ繧偵ヨ繧ｰ繝ｫ
 	 */
 	private async toggleBookmark(path: string): Promise<boolean> {
 		const bookmarks = getBookmarksPlugin(this.app);
@@ -1803,11 +2016,11 @@ export class TimelineView extends ItemView {
 
 		let result: boolean;
 		if (existing) {
-			// 既にブックマ�EクされてぁE��場合�E削除
+			// 譌｢縺ｫ繝悶ャ繧ｯ繝槭・繧ｯ縺輔ｌ縺ｦ縺・ｋ蝣ｴ蜷医・蜑企勁
 			instance.removeItem(existing);
 			result = false;
 		} else {
-			// ブックマ�Eクを追加
+			// 繝悶ャ繧ｯ繝槭・繧ｯ繧定ｿｽ蜉
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file && file instanceof TFile) {
 				instance.addItem({ type: 'file', path: path, title: '' });
@@ -1817,7 +2030,7 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// キャチE��ュをクリア
+		// 繧ｭ繝｣繝・す繝･繧偵け繝ｪ繧｢
 		clearBookmarkCache();
 		this.cachedBookmarkedPaths = null;
 
@@ -1825,7 +2038,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * スクロールハンドラー�E�無限スクロール用�E�E
+	 * 繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ繝上Φ繝峨Λ繝ｼ・育┌髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ逕ｨ・・
 	 */
 	private handleScroll(): void {
 		if (!this.plugin.data.settings.enableInfiniteScroll) return;
@@ -1834,7 +2047,7 @@ export class TimelineView extends ItemView {
 
 		const container = this.listContainerEl;
 		const scrollBottom = container.scrollTop + container.clientHeight;
-		const threshold = container.scrollHeight - 200; // 200px手前でロード開姁E
+		const threshold = container.scrollHeight - 200; // 200px謇句燕縺ｧ繝ｭ繝ｼ繝蛾幕蟋・
 
 		if (scrollBottom >= threshold) {
 			void this.loadMoreCards();
@@ -1842,7 +2055,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 追加カードをロード（無限スクロール用�E�E
+	 * 霑ｽ蜉繧ｫ繝ｼ繝峨ｒ繝ｭ繝ｼ繝会ｼ育┌髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ逕ｨ・・
 	 */
 	private async loadMoreCards(): Promise<void> {
 		if (this.isLoadingMore) return;
@@ -1857,7 +2070,7 @@ export class TimelineView extends ItemView {
 		const startIndex = this.displayedCount;
 		const endIndex = Math.min(startIndex + batchSize, this.filteredCards.length);
 
-		// 追加カードをチャンク描画
+		// 霑ｽ蜉繧ｫ繝ｼ繝峨ｒ繝√Ε繝ｳ繧ｯ謠冗判
 		const cardsToLoad = this.filteredCards.slice(startIndex, endIndex).filter((c): c is TimelineCard => !!c);
 		const { fragment: moreFragment, elements: moreElements } = await this.renderCardsToFragment(
 			cardsToLoad, isGridMode
@@ -1868,12 +2081,12 @@ export class TimelineView extends ItemView {
 		this.displayedCount = endIndex;
 		this.isLoadingMore = false;
 
-		// フッターを更新
+		// 繝輔ャ繧ｿ繝ｼ繧呈峩譁ｰ
 		this.updateFooter();
 	}
 
 	/**
-	 * タチE��開始ハンドラー�E��EルトゥリフレチE��ュ用�E�E
+	 * 繧ｿ繝・メ髢句ｧ九ワ繝ｳ繝峨Λ繝ｼ・医・繝ｫ繝医ぇ繝ｪ繝輔Ξ繝・す繝･逕ｨ・・
 	 */
 	private handleTouchStart(e: TouchEvent): void {
 		if (this.listContainerEl.scrollTop === 0) {
@@ -1885,7 +2098,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * タチE��移動ハンドラー�E��EルトゥリフレチE��ュ用�E�E
+	 * 繧ｿ繝・メ遘ｻ蜍輔ワ繝ｳ繝峨Λ繝ｼ・医・繝ｫ繝医ぇ繝ｪ繝輔Ξ繝・す繝･逕ｨ・・
 	 */
 	private handleTouchMove(e: TouchEvent): void {
 		if (this.pullToRefreshStartY === 0) return;
@@ -1902,10 +2115,10 @@ export class TimelineView extends ItemView {
 		const threshold = 80;
 
 		if (pullDistance > 0) {
-			// 引っ張り中 - チE��ォルト�Eスクロールを防止
+			// 蠑輔▲蠑ｵ繧贋ｸｭ - 繝・ヵ繧ｩ繝ｫ繝医・繧ｹ繧ｯ繝ｭ繝ｼ繝ｫ繧帝亟豁｢
 			e.preventDefault();
 
-			// インジケーターを表示・更新
+			// 繧､繝ｳ繧ｸ繧ｱ繝ｼ繧ｿ繝ｼ繧定｡ｨ遉ｺ繝ｻ譖ｴ譁ｰ
 			this.showPullIndicator(pullDistance, threshold);
 
 			if (pullDistance >= threshold) {
@@ -1917,12 +2130,12 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * タチE��終亁E��ンドラー�E��EルトゥリフレチE��ュ用�E�E
+	 * 繧ｿ繝・メ邨ゆｺ・ワ繝ｳ繝峨Λ繝ｼ・医・繝ｫ繝医ぇ繝ｪ繝輔Ξ繝・す繝･逕ｨ・・
 	 */
 	private handleTouchEnd(_e: TouchEvent): void {
 		if (this.pullToRefreshTriggered) {
 			this.pullToRefreshTriggered = false;
-			this.showPullIndicator(0, 80, true);  // ローチE��ング状態を表示
+			this.showPullIndicator(0, 80, true);  // 繝ｭ繝ｼ繝・ぅ繝ｳ繧ｰ迥ｶ諷九ｒ陦ｨ遉ｺ
 			void this.refresh().then(() => {
 				this.hidePullIndicator();
 			});
@@ -1933,7 +2146,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * プルインジケーターを表示
+	 * 繝励Ν繧､繝ｳ繧ｸ繧ｱ繝ｼ繧ｿ繝ｼ繧定｡ｨ遉ｺ
 	 */
 	private showPullIndicator(distance: number, threshold: number, loading: boolean = false): void {
 		if (!this.pullIndicatorEl) {
@@ -1953,19 +2166,19 @@ export class TimelineView extends ItemView {
 			this.pullIndicatorEl.createSpan({ text: 'Refreshing...' });
 			this.pullIndicatorEl.classList.add('is-loading');
 		} else if (progress >= 1) {
-			this.pullIndicatorEl.createSpan({ text: 'ↁE });
+			this.pullIndicatorEl.createSpan({ text: 'v' });
 			this.pullIndicatorEl.createSpan({ text: 'Release to refresh' });
 			this.pullIndicatorEl.classList.add('is-ready');
 			this.pullIndicatorEl.classList.remove('is-loading');
 		} else {
-			this.pullIndicatorEl.createSpan({ text: 'ↁE });
+			this.pullIndicatorEl.createSpan({ text: 'v' });
 			this.pullIndicatorEl.createSpan({ text: 'Pull to refresh' });
 			this.pullIndicatorEl.classList.remove('is-ready', 'is-loading');
 		}
 	}
 
 	/**
-	 * プルインジケーターを非表示
+	 * 繝励Ν繧､繝ｳ繧ｸ繧ｱ繝ｼ繧ｿ繝ｼ繧帝撼陦ｨ遉ｺ
 	 */
 	private hidePullIndicator(): void {
 		if (this.pullIndicatorEl) {
@@ -1975,7 +2188,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フッターを更新�E�無限スクロール用�E�E
+	 * 繝輔ャ繧ｿ繝ｼ繧呈峩譁ｰ・育┌髯舌せ繧ｯ繝ｭ繝ｼ繝ｫ逕ｨ・・
 	 */
 	private updateFooter(): void {
 		const footer = this.listContainerEl.querySelector('.timeline-footer');
@@ -1992,16 +2205,17 @@ export class TimelineView extends ItemView {
 			const bottomRefreshBtn = footer.createEl('button', {
 				cls: 'timeline-refresh-btn',
 				text: '↻',
+				attr: { 'aria-label': 'Refresh timeline' },
 			});
 			bottomRefreshBtn.addEventListener('click', () => { void this.refresh(); });
 		}
 	}
 
 	/**
-	 * キーボ�EドショートカチE��ハンドラー
+	 * 繧ｭ繝ｼ繝懊・繝峨す繝ｧ繝ｼ繝医き繝・ヨ繝上Φ繝峨Λ繝ｼ
 	 */
 	private handleKeydown(e: KeyboardEvent): void {
-		// 入力フィールドにフォーカスがある場合�E無要E
+		// 蜈･蜉帙ヵ繧｣繝ｼ繝ｫ繝峨↓繝輔か繝ｼ繧ｫ繧ｹ縺後≠繧句ｴ蜷医・辟｡隕・
 		const target = e.target as HTMLElement;
 		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
 			return;
@@ -2091,7 +2305,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 次のカードにフォーカス
+	 * 谺｡縺ｮ繧ｫ繝ｼ繝峨↓繝輔か繝ｼ繧ｫ繧ｹ
 	 */
 	private focusNextCard(): void {
 		if (this.cardElements.length === 0) return;
@@ -2103,7 +2317,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 前�Eカードにフォーカス
+	 * 蜑阪・繧ｫ繝ｼ繝峨↓繝輔か繝ｼ繧ｫ繧ｹ
 	 */
 	private focusPrevCard(): void {
 		if (this.cardElements.length === 0) return;
@@ -2115,10 +2329,10 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカスインチE��クスを設宁E
+	 * 繝輔か繝ｼ繧ｫ繧ｹ繧､繝ｳ繝・ャ繧ｯ繧ｹ繧定ｨｭ螳・
 	 */
 	private setFocusedIndex(index: number): void {
-		// 前�Eフォーカスを解除
+		// 蜑阪・繝輔か繝ｼ繧ｫ繧ｹ繧定ｧ｣髯､
 		if (this.focusedIndex >= 0 && this.focusedIndex < this.cardElements.length) {
 			const prevEl = this.cardElements[this.focusedIndex];
 			if (prevEl) {
@@ -2126,7 +2340,7 @@ export class TimelineView extends ItemView {
 			}
 		}
 
-		// 新しいフォーカスを設宁E
+		// 譁ｰ縺励＞繝輔か繝ｼ繧ｫ繧ｹ繧定ｨｭ螳・
 		this.focusedIndex = index;
 		if (index >= 0 && index < this.cardElements.length) {
 			const cardEl = this.cardElements[index];
@@ -2138,7 +2352,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカスをクリア
+	 * 繝輔か繝ｼ繧ｫ繧ｹ繧偵け繝ｪ繧｢
 	 */
 	private clearFocus(): void {
 		if (this.focusedIndex >= 0 && this.focusedIndex < this.cardElements.length) {
@@ -2151,7 +2365,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカス中のカードを開く
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨ｒ髢九￥
 	 */
 	private async openFocusedCard(): Promise<void> {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2162,7 +2376,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカス中のカードに難易度評価
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨↓髮｣譏灘ｺｦ隧穂ｾ｡
 	 */
 	private async rateFocusedCard(rating: DifficultyRating): Promise<void> {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2174,21 +2388,21 @@ export class TimelineView extends ItemView {
 		const cardEl = this.cardElements[this.focusedIndex];
 		if (cardEl) {
 			cardEl.addClass('timeline-card-reviewed');
-			// Undoボタンを表示
+			// Undo繝懊ち繝ｳ繧定｡ｨ遉ｺ
 			const buttonsEl = cardEl.querySelector('.timeline-difficulty-buttons') as HTMLElement;
 			if (buttonsEl) {
 				this.replaceWithUndoButton(buttonsEl, card);
 			}
 		}
 
-		// 次のカードにフォーカス
+		// 谺｡縺ｮ繧ｫ繝ｼ繝峨↓繝輔か繝ｼ繧ｫ繧ｹ
 		if (this.focusedIndex < this.cardElements.length - 1) {
 			this.setFocusedIndex(this.focusedIndex + 1);
 		}
 	}
 
 	/**
-	 * フォーカス中のカード�E評価を取り消し
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨・隧穂ｾ｡繧貞叙繧頑ｶ医＠
 	 */
 	private async undoFocusedCard(): Promise<void> {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2203,7 +2417,7 @@ export class TimelineView extends ItemView {
 		const cardEl = this.cardElements[this.focusedIndex];
 		if (cardEl) {
 			cardEl.removeClass('timeline-card-reviewed');
-			// 難易度ボタンを�E描画
+			// 髮｣譏灘ｺｦ繝懊ち繝ｳ繧貞・謠冗判
 			const buttonsEl = cardEl.querySelector('.timeline-difficulty-buttons') as HTMLElement;
 			if (buttonsEl) {
 				buttonsEl.removeClass('timeline-difficulty-undo');
@@ -2214,7 +2428,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカス中のカード�Eブックマ�Eクをトグル
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨・繝悶ャ繧ｯ繝槭・繧ｯ繧偵ヨ繧ｰ繝ｫ
 	 */
 	private async toggleFocusedBookmark(): Promise<void> {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2224,19 +2438,19 @@ export class TimelineView extends ItemView {
 
 		const nowBookmarked = await this.toggleBookmark(card.path);
 
-		// ブックマ�EクボタンのUIを更新
+		// 繝悶ャ繧ｯ繝槭・繧ｯ繝懊ち繝ｳ縺ｮUI繧呈峩譁ｰ
 		const cardEl = this.cardElements[this.focusedIndex];
 		if (cardEl) {
 			const bookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
 			if (bookmarkBtn) {
-				bookmarkBtn.textContent = nowBookmarked ? '☁E : '☁E;
+				bookmarkBtn.textContent = nowBookmarked ? '★' : '☆';
 				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 			}
 		}
 	}
 
 	/**
-	 * フォーカス中のカード�Eコメントモーダルを開ぁE
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨・繧ｳ繝｡繝ｳ繝医Δ繝ｼ繝繝ｫ繧帝幕縺・
 	 */
 	private openFocusedComment(): void {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2252,7 +2466,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカス中のカード�E引用ノ�Eトモーダルを開ぁE
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨・蠑慕畑繝弱・繝医Δ繝ｼ繝繝ｫ繧帝幕縺・
 	 */
 	private openFocusedQuoteNote(): void {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2268,7 +2482,7 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * フォーカス中のカード�Eリンクノ�Eトモーダルを開ぁE
+	 * 繝輔か繝ｼ繧ｫ繧ｹ荳ｭ縺ｮ繧ｫ繝ｼ繝峨・繝ｪ繝ｳ繧ｯ繝弱・繝医Δ繝ｼ繝繝ｫ繧帝幕縺・
 	 */
 	private openFocusedLinkNote(): void {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
@@ -2282,6 +2496,8 @@ export class TimelineView extends ItemView {
 		}
 	}
 }
+
+
 
 
 

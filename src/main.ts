@@ -1,6 +1,6 @@
 // Timeline Note Launcher - Main Plugin
 import { Plugin } from 'obsidian';
-import { PluginData, DEFAULT_DATA, DifficultyRating, TimelineCard, getTodayString, QuoteNoteDraft, RatingUndoSnapshot } from './types';
+import { PluginData, DEFAULT_DATA, DifficultyRating, TimelineCard, getTodayString, QuoteNoteDraft, RatingUndoSnapshot, FilterPreset } from './types';
 import { TimelineView, TIMELINE_VIEW_TYPE } from './timelineView';
 import { TimelineSettingTab } from './settings';
 import {
@@ -132,6 +132,44 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		if (!this.data.reviewHistory) {
 			this.data.reviewHistory = {};
 		}
+
+		// フィルタープリセットの初期化
+		if (!this.data.filterPresets) {
+			this.data.filterPresets = [];
+		}
+
+		// データ移行
+		await this.migrateData(loaded?.engineVersion ?? 1);
+	}
+
+	/**
+	 * データ移行処理
+	 * 古いengineVersionから最新バージョンへ段階的に移行
+	 */
+	private async migrateData(fromVersion: number): Promise<void> {
+		const currentVersion = DEFAULT_DATA.engineVersion;
+		if (fromVersion >= currentVersion) return;
+
+		let migrated = false;
+
+		// v1 -> v2: easeFactor フィールドの追加
+		if (fromVersion < 2) {
+			for (const path of Object.keys(this.data.reviewLogs)) {
+				const log = this.data.reviewLogs[path];
+				if (log && log.easeFactor === undefined) {
+					log.easeFactor = log.difficulty ?? 2.5;
+				}
+			}
+			migrated = true;
+		}
+
+		// 将来の移行ロジックはここに追加:
+		// if (fromVersion < 3) { ... }
+
+		if (migrated) {
+			this.data.engineVersion = currentVersion;
+			await this.saveData(this.data);
+		}
 	}
 
 	/**
@@ -212,6 +250,26 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 				)
 			)
 		);
+
+		// 選択されたカードのlastSelectedAtを更新（公平ランダム用）
+		const now = Date.now();
+		for (const path of result.selectedPaths) {
+			if (!this.data.reviewLogs[path]) {
+				this.data.reviewLogs[path] = {
+					lastReviewedAt: null,
+					reviewCount: 0,
+					nextReviewAt: null,
+					difficulty: 2.5,
+					interval: 0,
+					easeFactor: 2.5,
+					lastSelectedAt: now,
+				};
+			} else {
+				this.data.reviewLogs[path].lastSelectedAt = now;
+			}
+		}
+		// バックグラウンドで保存（UIをブロックしない）
+		void this.syncAndSave();
 
 		return { cards, newCount: result.newCount, dueCount: result.dueCount };
 	}
@@ -449,6 +507,38 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		if (!draft) return false;
 		const hasSelectedTexts = draft.selectedTexts?.some(t => t.trim()) ?? false;
 		return !!(hasSelectedTexts || draft.title.trim() || draft.comment.trim());
+	}
+
+	/**
+	 * フィルタープリセットを取得
+	 */
+	getFilterPresets(): FilterPreset[] {
+		return this.data.filterPresets ?? [];
+	}
+
+	/**
+	 * フィルタープリセットを保存
+	 */
+	async saveFilterPreset(preset: FilterPreset): Promise<void> {
+		if (!this.data.filterPresets) {
+			this.data.filterPresets = [];
+		}
+		const existingIndex = this.data.filterPresets.findIndex(p => p.id === preset.id);
+		if (existingIndex >= 0) {
+			this.data.filterPresets[existingIndex] = preset;
+		} else {
+			this.data.filterPresets.push(preset);
+		}
+		await this.syncAndSave();
+	}
+
+	/**
+	 * フィルタープリセットを削除
+	 */
+	async deleteFilterPreset(id: string): Promise<void> {
+		if (!this.data.filterPresets) return;
+		this.data.filterPresets = this.data.filterPresets.filter(p => p.id !== id);
+		await this.syncAndSave();
 	}
 
 	/**

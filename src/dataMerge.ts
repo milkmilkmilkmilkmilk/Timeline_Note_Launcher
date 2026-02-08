@@ -7,6 +7,7 @@ import type {
 	DailyReviewHistory,
 	CommentDrafts,
 	QuoteNoteDrafts,
+	FilterPreset,
 } from './types';
 import { DEFAULT_DATA } from './types';
 
@@ -140,8 +141,28 @@ export function mergePluginData(local: PluginData, remote: PluginData): PluginDa
 		reviewHistory: mergeReviewHistory(local.reviewHistory, remote.reviewHistory),
 		commentDrafts: mergeCommentDrafts(local.commentDrafts, remote.commentDrafts),
 		quoteNoteDrafts: mergeQuoteNoteDrafts(local.quoteNoteDrafts, remote.quoteNoteDrafts),
+		filterPresets: mergeFilterPresets(local.filterPresets, remote.filterPresets),
 		engineVersion: Math.max(local.engineVersion, remote.engineVersion),
 	};
+}
+
+/**
+ * フィルタープリセットをマージ（ID基準で重複排除、ローカル優先）
+ */
+function mergeFilterPresets(
+	local: FilterPreset[],
+	remote: FilterPreset[]
+): FilterPreset[] {
+	const result = [...local];
+	const localIds = new Set(local.map(p => p.id));
+
+	for (const preset of remote) {
+		if (!localIds.has(preset.id)) {
+			result.push(preset);
+		}
+	}
+
+	return result;
 }
 
 /**
@@ -161,6 +182,9 @@ export function reconstructFullData(diskData: Partial<PluginData> | null): Plugi
 	}
 	if (!base.quoteNoteDrafts) {
 		base.quoteNoteDrafts = {};
+	}
+	if (!base.filterPresets) {
+		base.filterPresets = [];
 	}
 	return base;
 }

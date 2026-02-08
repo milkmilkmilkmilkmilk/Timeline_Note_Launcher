@@ -1,5 +1,5 @@
 // Timeline Note Launcher - Data Layer
-import { App, TFile, CachedMetadata, normalizePath } from 'obsidian';
+import { App, TFile, TFolder, CachedMetadata, normalizePath, Vault } from 'obsidian';
 import {
 	PluginSettings,
 	NoteReviewLog,
@@ -303,28 +303,37 @@ export function getFileType(extension: string): FileType {
 
 /**
  * 対象ファイルを列挙・フィルタリングする
+ * ターゲットフォルダ指定時は対象フォルダのみ走査して最適化
  */
 export function enumerateTargetNotes(
 	app: App,
 	settings: PluginSettings
 ): TFile[] {
-	const allFiles = app.vault.getFiles();
+	// ターゲットフォルダ指定時は対象フォルダのみ走査
+	let candidateFiles: TFile[];
+	if (settings.targetFolders.length > 0) {
+		candidateFiles = [];
+		for (const folderPath of settings.targetFolders) {
+			const folder = app.vault.getAbstractFileByPath(folderPath);
+			if (folder instanceof TFolder) {
+				Vault.recurseChildren(folder, (file) => {
+					if (file instanceof TFile) {
+						candidateFiles.push(file);
+					}
+				});
+			}
+		}
+	} else {
+		candidateFiles = app.vault.getFiles();
+	}
 
-	return allFiles.filter(file => {
+	return candidateFiles.filter(file => {
 		// 除外フォルダフィルタ
 		if (settings.excludeFolders.length > 0) {
 			const inExcludedFolder = settings.excludeFolders.some(folder =>
 				file.path.startsWith(folder + '/') || file.path === folder
 			);
 			if (inExcludedFolder) return false;
-		}
-
-		// フォルダフィルタ
-		if (settings.targetFolders.length > 0) {
-			const inFolder = settings.targetFolders.some(folder =>
-				file.path.startsWith(folder + '/') || file.path === folder
-			);
-			if (!inFolder) return false;
 		}
 
 		// タグフィルタ（マークダウンファイルのみ適用）
@@ -392,6 +401,43 @@ function getYamlNumber(cache: CachedMetadata | null, key: string): number | null
 		return isNaN(parsed) ? null : parsed;
 	}
 	return null;
+}
+
+/**
+ * YAMLまたはファイル情報からノート作成日を取得
+ * 優先順位: 1. YAML日付フィールド 2. ファイル名の日付 3. ファイル作成日時
+ */
+function extractNoteDate(
+	cache: CachedMetadata | null,
+	file: TFile,
+	yamlDateField: string
+): number | null {
+	// 1. YAMLフィールドから取得
+	if (yamlDateField && cache?.frontmatter) {
+		const value: unknown = cache.frontmatter[yamlDateField];
+		if (value) {
+			// 文字列の場合はパース
+			if (typeof value === 'string') {
+				const parsed = Date.parse(value);
+				if (!isNaN(parsed)) return parsed;
+			}
+			// 数値の場合はUnixタイムスタンプとして扱う
+			if (typeof value === 'number') {
+				// 秒単位の場合はミリ秒に変換
+				return value < 1e12 ? value * 1000 : value;
+			}
+		}
+	}
+
+	// 2. ファイル名から日付を抽出（YYYY-MM-DD形式）
+	const dateMatch = file.basename.match(/^(\d{4}-\d{2}-\d{2})/);
+	if (dateMatch?.[1]) {
+		const parsed = Date.parse(dateMatch[1]);
+		if (!isNaN(parsed)) return parsed;
+	}
+
+	// 3. ファイル作成日時にフォールバック
+	return file.stat.ctime;
 }
 
 /**
@@ -657,10 +703,12 @@ export function createCandidateCard(
 
 	let pinned = false;
 	let yamlPriority: number | null = null;
+	let createdAt: number | null = file.stat.ctime;
 	if (fileType === 'markdown') {
 		const cache = app.metadataCache.getFileCache(file);
 		pinned = isPinned(cache);
 		yamlPriority = getYamlNumber(cache, settings.yamlPriorityKey);
+		createdAt = extractNoteDate(cache, file, settings.yamlDateField);
 	}
 
 	return {
@@ -674,6 +722,8 @@ export function createCandidateCard(
 		isDue: log.nextReviewAt !== null && log.nextReviewAt <= now,
 		pinned,
 		yamlPriority,
+		createdAt,
+		lastSelectedAt: log.lastSelectedAt ?? null,
 	};
 }
 
@@ -736,6 +786,8 @@ export async function createTimelineCard(
 			// YAML
 			yamlDifficulty,
 			yamlPriority,
+			// 作成日
+			createdAt: extractNoteDate(cache, file, settings.yamlDateField),
 		};
 	}
 
@@ -820,6 +872,8 @@ export async function createTimelineCard(
 		// YAML
 		yamlDifficulty: null,
 		yamlPriority: null,
+		// 作成日（非マークダウンはファイル作成日時を使用）
+		createdAt: file.stat.ctime,
 	};
 }
 

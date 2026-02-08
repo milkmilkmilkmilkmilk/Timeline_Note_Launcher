@@ -6,6 +6,19 @@
 	overflow-y: auto;
 	padding: 8px;
 	outline: none;
+	/* ボーダー半径変数（ユーザーによるオーバーライド可能） */
+	--timeline-radius-sm: 4px;
+	--timeline-radius-md: 6px;
+	--timeline-radius-lg: 8px;
+	/* テーマカラー変数（ユーザーによるオーバーライド可能） */
+	--timeline-color-blue: #3b82f6;
+	--timeline-color-cyan: #06b6d4;
+	--timeline-color-green: #22c55e;
+	--timeline-color-yellow: #eab308;
+	--timeline-color-orange: #f97316;
+	--timeline-color-red: #ef4444;
+	--timeline-color-pink: #ec4899;
+	--timeline-color-purple: #a855f7;
 }
 
 /* モバイル向け調整 */
@@ -31,7 +44,7 @@
 
 .timeline-refresh-btn {
 	padding: 4px 8px;
-	border-radius: 4px;
+	border-radius: var(--timeline-radius-sm);
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
 	border: none;
@@ -42,6 +55,11 @@
 
 .timeline-refresh-btn:hover {
 	background: var(--interactive-accent-hover);
+}
+
+.timeline-refresh-btn:focus-visible {
+	outline: 2px solid var(--text-normal);
+	outline-offset: 2px;
 }
 
 .timeline-stats {
@@ -65,7 +83,7 @@
 
 .timeline-view-toggle-btn {
 	padding: 4px 8px;
-	border-radius: 4px;
+	border-radius: var(--timeline-radius-sm);
 	background: var(--background-modifier-hover);
 	border: none;
 	cursor: pointer;
@@ -103,7 +121,7 @@
 	padding: 10px 12px;
 	margin-bottom: 8px;
 	background: var(--background-secondary);
-	border-radius: 8px;
+	border-radius: var(--timeline-radius-lg);
 	border: 1px solid var(--background-modifier-border);
 }
 
@@ -125,7 +143,7 @@
 	flex: 1;
 	padding: 6px 10px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-size: 13px;
@@ -141,6 +159,54 @@
 	color: var(--text-faint);
 }
 
+/* 日付範囲フィルタ */
+.timeline-filter-dates {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.timeline-filter-dates-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.timeline-date-input {
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--timeline-radius-md);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 12px;
+	font-family: inherit;
+}
+
+.timeline-date-input:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.timeline-date-clear-btn {
+	padding: 2px 6px;
+	border: none;
+	border-radius: var(--timeline-radius-sm);
+	background: var(--background-modifier-error);
+	color: var(--text-on-accent);
+	font-size: 10px;
+	cursor: pointer;
+	transition: opacity 0.15s ease;
+}
+
+.timeline-date-clear-btn:hover {
+	opacity: 0.8;
+}
+
 /* ファイルタイプフィルタ */
 .timeline-filter-types {
 	display: flex;
@@ -150,7 +216,7 @@
 .timeline-filter-type-btn {
 	padding: 6px 8px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	cursor: pointer;
 	font-size: 14px;
@@ -168,6 +234,11 @@
 	opacity: 1;
 	background: var(--interactive-accent);
 	border-color: var(--interactive-accent);
+}
+
+.timeline-filter-type-btn:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 /* タグフィルタ */
@@ -223,6 +294,11 @@
 .timeline-filter-tag-chip:hover {
 	border-color: var(--interactive-accent);
 	color: var(--text-normal);
+}
+
+.timeline-filter-tag-chip:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 .timeline-filter-tag-chip.is-selected {
@@ -358,7 +434,7 @@
 	left: 8px;
 	font-size: 16px;
 	padding: 4px 6px;
-	background: rgba(0, 0, 0, 0.6);
+	background: var(--background-modifier-hover);
 	border-radius: 6px;
 }
 
@@ -482,7 +558,7 @@
 .timeline-card {
 	position: relative;
 	background: var(--background-secondary);
-	border-radius: 8px;
+	border-radius: var(--timeline-radius-lg);
 	padding: 12px 16px;
 	transition: background 0.15s ease, box-shadow 0.15s ease;
 	border: 1px solid var(--background-modifier-border);
@@ -614,7 +690,7 @@
 .timeline-badge {
 	font-size: 10px;
 	padding: 2px 6px;
-	border-radius: 4px;
+	border-radius: var(--timeline-radius-sm);
 	font-weight: 600;
 }
 
@@ -635,7 +711,7 @@
 /* サムネイル画像 */
 .timeline-card-thumbnail {
 	margin-bottom: 10px;
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	overflow: hidden;
 	background: var(--background-primary);
 }
@@ -762,7 +838,7 @@
 	margin: 10px 0;
 	padding: 8px 10px;
 	background: var(--background-primary);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	font-size: 12px;
 }
 
@@ -794,7 +870,7 @@
 	display: inline-block;
 	padding: 3px 8px;
 	background: var(--background-secondary);
-	border-radius: 4px;
+	border-radius: var(--timeline-radius-sm);
 	color: var(--text-accent);
 	cursor: pointer;
 	transition: all 0.15s ease;
@@ -855,10 +931,15 @@
 	flex-direction: column;
 	align-items: center;
 	padding: 8px 4px;
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	border: none;
 	cursor: pointer;
 	transition: all 0.15s ease;
+}
+
+.timeline-difficulty-btn:focus-visible {
+	outline: 2px solid var(--text-normal);
+	outline-offset: 2px;
 }
 
 .timeline-btn-label {
@@ -932,7 +1013,7 @@
 
 .timeline-undo-btn {
 	padding: 8px 24px;
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
 	color: var(--text-muted);
@@ -1022,7 +1103,7 @@
 
 .timeline-stat-card {
 	background: var(--background-primary);
-	border-radius: 8px;
+	border-radius: var(--timeline-radius-lg);
 	padding: 12px;
 	text-align: center;
 	border: 1px solid var(--background-modifier-border);
@@ -1057,7 +1138,7 @@
 	gap: 8px;
 	padding: 12px;
 	background: linear-gradient(135deg, rgba(251, 146, 60, 0.15) 0%, rgba(245, 158, 11, 0.1) 100%);
-	border-radius: 8px;
+	border-radius: var(--timeline-radius-lg);
 	margin-bottom: 16px;
 	font-weight: 600;
 	color: var(--text-normal);
@@ -1143,7 +1224,7 @@
 	gap: 6px;
 	padding: 6px 10px;
 	background: var(--background-primary);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	border: 1px solid var(--background-modifier-border);
 }
 
@@ -1179,7 +1260,7 @@
 	align-items: center;
 	padding: 6px 10px;
 	background: var(--background-primary);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 }
 
 .timeline-stats-detail-label {
@@ -1197,122 +1278,122 @@
 
 /* Blue テーマ */
 .timeline-theme-blue .timeline-card {
-	border-left: 3px solid #3b82f6;
-	background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-blue);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-blue) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-blue .timeline-card-title {
-	color: #3b82f6;
+	color: var(--timeline-color-blue);
 }
 
 .timeline-theme-blue .timeline-refresh-btn,
 .timeline-theme-blue .timeline-btn-good {
-	background: #3b82f6;
+	background: var(--timeline-color-blue);
 }
 
 /* Cyan テーマ */
 .timeline-theme-cyan .timeline-card {
-	border-left: 3px solid #06b6d4;
-	background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-cyan);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-cyan) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-cyan .timeline-card-title {
-	color: #06b6d4;
+	color: var(--timeline-color-cyan);
 }
 
 .timeline-theme-cyan .timeline-refresh-btn,
 .timeline-theme-cyan .timeline-btn-good {
-	background: #06b6d4;
+	background: var(--timeline-color-cyan);
 }
 
 /* Green テーマ */
 .timeline-theme-green .timeline-card {
-	border-left: 3px solid #22c55e;
-	background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-green);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-green) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-green .timeline-card-title {
-	color: #22c55e;
+	color: var(--timeline-color-green);
 }
 
 .timeline-theme-green .timeline-refresh-btn,
 .timeline-theme-green .timeline-btn-good {
-	background: #22c55e;
+	background: var(--timeline-color-green);
 }
 
 /* Yellow テーマ */
 .timeline-theme-yellow .timeline-card {
-	border-left: 3px solid #eab308;
-	background: linear-gradient(135deg, rgba(234, 179, 8, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-yellow);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-yellow) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-yellow .timeline-card-title {
-	color: #ca8a04;
+	color: var(--timeline-color-yellow);
 }
 
 .timeline-theme-yellow .timeline-refresh-btn,
 .timeline-theme-yellow .timeline-btn-good {
-	background: #eab308;
+	background: var(--timeline-color-yellow);
 }
 
 /* Orange テーマ */
 .timeline-theme-orange .timeline-card {
-	border-left: 3px solid #f97316;
-	background: linear-gradient(135deg, rgba(249, 115, 22, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-orange);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-orange) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-orange .timeline-card-title {
-	color: #f97316;
+	color: var(--timeline-color-orange);
 }
 
 .timeline-theme-orange .timeline-refresh-btn,
 .timeline-theme-orange .timeline-btn-good {
-	background: #f97316;
+	background: var(--timeline-color-orange);
 }
 
 /* Red テーマ */
 .timeline-theme-red .timeline-card {
-	border-left: 3px solid #ef4444;
-	background: linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-red);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-red) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-red .timeline-card-title {
-	color: #ef4444;
+	color: var(--timeline-color-red);
 }
 
 .timeline-theme-red .timeline-refresh-btn,
 .timeline-theme-red .timeline-btn-good {
-	background: #ef4444;
+	background: var(--timeline-color-red);
 }
 
 /* Pink テーマ */
 .timeline-theme-pink .timeline-card {
-	border-left: 3px solid #ec4899;
-	background: linear-gradient(135deg, rgba(236, 72, 153, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-pink);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-pink) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-pink .timeline-card-title {
-	color: #ec4899;
+	color: var(--timeline-color-pink);
 }
 
 .timeline-theme-pink .timeline-refresh-btn,
 .timeline-theme-pink .timeline-btn-good {
-	background: #ec4899;
+	background: var(--timeline-color-pink);
 }
 
 /* Purple テーマ */
 .timeline-theme-purple .timeline-card {
-	border-left: 3px solid #a855f7;
-	background: linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, var(--background-secondary) 100%);
+	border-left: 3px solid var(--timeline-color-purple);
+	background: linear-gradient(135deg, color-mix(in srgb, var(--timeline-color-purple) 8%, transparent) 0%, var(--background-secondary) 100%);
 }
 
 .timeline-theme-purple .timeline-card-title {
-	color: #a855f7;
+	color: var(--timeline-color-purple);
 }
 
 .timeline-theme-purple .timeline-refresh-btn,
 .timeline-theme-purple .timeline-btn-good {
-	background: #a855f7;
+	background: var(--timeline-color-purple);
 }
 
 /* テーマ適用時のピン留め・NEW・DUE バッジの上書き */
@@ -1390,7 +1471,7 @@
 	max-height: 200px;
 	overflow-y: auto;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 }
 
@@ -1411,7 +1492,7 @@
 	padding: 12px;
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	font-size: 12px;
 	line-height: 1.6;
 	color: var(--text-muted);
@@ -1437,13 +1518,14 @@
 	min-height: 120px;
 	padding: 12px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-size: 14px;
 	line-height: 1.5;
 	resize: vertical;
 	font-family: var(--font-text);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .timeline-comment-textarea:focus {
@@ -1464,7 +1546,7 @@
 
 .timeline-comment-btn {
 	padding: 8px 16px;
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	border: none;
 	cursor: pointer;
 	font-size: 14px;
@@ -1608,7 +1690,7 @@
 	max-height: 250px;
 	overflow-y: auto;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 }
 
@@ -1651,7 +1733,7 @@
 	padding: 12px;
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	font-size: 12px;
 	line-height: 1.6;
 	color: var(--text-muted);
@@ -1668,7 +1750,7 @@
 	min-height: 80px;
 	padding: 10px 12px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-size: 13px;
@@ -1676,6 +1758,7 @@
 	resize: vertical;
 	font-family: var(--font-text);
 	margin-bottom: 8px;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .timeline-quote-note-manual-textarea:focus {
@@ -1696,11 +1779,12 @@
 	width: 100%;
 	padding: 10px 12px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-size: 14px;
 	font-family: var(--font-text);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .timeline-quote-note-title-input:focus {
@@ -1718,13 +1802,14 @@
 	min-height: 120px;
 	padding: 12px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-size: 14px;
 	line-height: 1.5;
 	resize: vertical;
 	font-family: var(--font-text);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .timeline-quote-note-textarea:focus {
@@ -1745,7 +1830,7 @@
 
 .timeline-quote-note-buttons button {
 	padding: 8px 16px;
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	border: none;
 	cursor: pointer;
 	font-size: 14px;
@@ -1787,7 +1872,7 @@
 
 .timeline-quote-note-add-btn {
 	padding: 6px 12px;
-	border-radius: 4px;
+	border-radius: var(--timeline-radius-sm);
 	border: none;
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
@@ -1809,7 +1894,7 @@
 
 .timeline-quote-note-quotes-list {
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	max-height: 150px;
 	overflow-y: auto;
@@ -1931,11 +2016,12 @@
 	width: 100%;
 	padding: 10px 12px;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	color: var(--text-normal);
 	font-size: 14px;
 	font-family: var(--font-text);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .timeline-link-note-search-input:focus {
@@ -1952,7 +2038,7 @@
 	max-height: 200px;
 	overflow-y: auto;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	margin-top: 8px;
 	background: var(--background-primary);
 }
@@ -2027,7 +2113,7 @@
 
 .timeline-link-note-selected-list {
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	background: var(--background-primary);
 	max-height: 150px;
 	overflow-y: auto;
@@ -2097,7 +2183,7 @@
 
 .timeline-link-note-buttons button {
 	padding: 8px 16px;
-	border-radius: 6px;
+	border-radius: var(--timeline-radius-md);
 	border: none;
 	cursor: pointer;
 	font-size: 14px;
@@ -2325,7 +2411,7 @@
 	width: 100%;
 	display: block;
 	border: none;
-	background: white;
+	background: var(--background-primary);
 }
 
 /* PDF オープンボタン */
@@ -2726,6 +2812,11 @@
 .timeline-ui-twitter .timeline-action-btn:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-accent);
+}
+
+.timeline-ui-twitter .timeline-action-btn:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 .timeline-ui-twitter .timeline-action-btn.has-draft {
@@ -3278,4 +3369,97 @@
 
 .theme-dark .timeline-card-preview-ipynb em {
 	background: rgba(231, 111, 0, 0.15);
+}
+
+/* ===== フィルタープリセット ===== */
+
+.timeline-filter-presets {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.timeline-preset-save-btn {
+	padding: 4px 10px;
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--timeline-radius-sm);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: 11px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.timeline-preset-save-btn:hover {
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.timeline-preset-chip {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--timeline-radius-sm);
+	font-size: 11px;
+	transition: all 0.15s ease;
+}
+
+.timeline-preset-chip:hover {
+	border-color: var(--interactive-accent);
+}
+
+.timeline-preset-name {
+	color: var(--text-normal);
+	cursor: pointer;
+}
+
+.timeline-preset-name:hover {
+	color: var(--interactive-accent);
+}
+
+.timeline-preset-delete-btn {
+	padding: 0 4px;
+	border: none;
+	background: transparent;
+	color: var(--text-faint);
+	font-size: 12px;
+	cursor: pointer;
+	line-height: 1;
+	transition: color 0.15s ease;
+}
+
+.timeline-preset-delete-btn:hover {
+	color: var(--text-error);
+}
+
+/* モバイル向けプリセット調整 */
+.timeline-mobile .timeline-preset-save-btn {
+	padding: 6px 12px;
+	font-size: 12px;
+}
+
+.timeline-mobile .timeline-preset-chip {
+	padding: 6px 10px;
+	font-size: 12px;
+}
+
+/* プリセット名入力モーダル */
+.timeline-preset-name-input {
+	width: 100%;
+	margin-bottom: 1em;
+}
+
+.timeline-preset-modal-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
 }
