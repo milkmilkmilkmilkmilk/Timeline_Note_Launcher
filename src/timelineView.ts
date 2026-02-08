@@ -1272,8 +1272,8 @@ export class TimelineView extends ItemView {
 			});
 		}
 
-		// サムネイル画像 / PDF埋め込み
-		if (card.firstImagePath) {
+		// サムネイル画像 / PDF埋め込み（マークダウンはMarkdownRenderer内で位置通りに表示されるためスキップ）
+		if (card.firstImagePath && card.fileType !== 'markdown') {
 			if (card.fileType === 'pdf') {
 				const thumbnailEl = contentEl.createDiv({ cls: 'timeline-card-thumbnail timeline-card-pdf-embed' });
 				this.pendingPdfEmbeds.set(thumbnailEl, { card, isGridMode: false });
