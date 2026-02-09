@@ -277,7 +277,7 @@ export class TimelineView extends ItemView {
 		await this.render();
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): Promise<void> {
 		// スクロール位置を保存
 		this.scrollPosition = this.listContainerEl.scrollTop;
 		// 検索デバウンスタイマーを解除
@@ -297,6 +297,7 @@ export class TimelineView extends ItemView {
 			this.listContainerEl.removeEventListener('touchmove', this.touchMoveHandler);
 			this.listContainerEl.removeEventListener('touchend', this.touchEndHandler);
 		}
+		return Promise.resolve();
 	}
 
 	/**
@@ -1148,14 +1149,13 @@ export class TimelineView extends ItemView {
 		setIcon(headerBookmarkBtn, 'bookmark');
 		headerBookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-				// 同期：タイトル行のブックマークボタンも更新
-				const titleBookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
-				if (titleBookmarkBtn) {
-					titleBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-				}
-			});
+			const nowBookmarked = this.toggleBookmark(card.path);
+			headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+			// 同期：タイトル行のブックマークボタンも更新
+			const titleBookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
+			if (titleBookmarkBtn) {
+				titleBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+			}
 		});
 
 		// タイトル行
@@ -1244,12 +1244,11 @@ export class TimelineView extends ItemView {
 		setIcon(bookmarkBtn, 'bookmark');
 		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-				bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
-				// 同期：ヘッダーのブックマークボタンも更新
-				headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-			});
+			const nowBookmarked = this.toggleBookmark(card.path);
+			bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
+			bookmarkBtn.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
+			// 同期：ヘッダーのブックマークボタンも更新
+			headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 		});
 
 		// プレビュー（Canvas/Officeは埋め込みのみ表示するためスキップ）
@@ -1611,9 +1610,8 @@ export class TimelineView extends ItemView {
 		setIcon(bookmarkBtn, 'bookmark');
 		bookmarkBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
-			void this.toggleBookmark(card.path).then(nowBookmarked => {
-				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-			});
+			const nowBookmarked = this.toggleBookmark(card.path);
+			bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 		});
 
 		// タイトル
@@ -2415,7 +2413,7 @@ export class TimelineView extends ItemView {
 	/**
 	 * ブックマークをトグル
 	 */
-	private async toggleBookmark(path: string): Promise<boolean> {
+	private toggleBookmark(path: string): boolean {
 		const bookmarks = getBookmarksPlugin(this.app);
 		if (!bookmarks?.instance) {
 			return false;
@@ -2680,7 +2678,7 @@ export class TimelineView extends ItemView {
 			case 'b':
 				if (this.focusedIndex >= 0) {
 					e.preventDefault();
-					void this.toggleFocusedBookmark();
+					this.toggleFocusedBookmark();
 				}
 				break;
 			case 'c':
@@ -2844,13 +2842,13 @@ export class TimelineView extends ItemView {
 	/**
 	 * フォーカス中のカードのブックマークをトグル
 	 */
-	private async toggleFocusedBookmark(): Promise<void> {
+	private toggleFocusedBookmark(): void {
 		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
 
 		const card = this.filteredCards[this.focusedIndex];
 		if (!card) return;
 
-		const nowBookmarked = await this.toggleBookmark(card.path);
+		const nowBookmarked = this.toggleBookmark(card.path);
 
 		// ブックマークボタンのUIを更新
 		const cardEl = this.cardElements[this.focusedIndex];
