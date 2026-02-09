@@ -28,10 +28,12 @@ export default tseslint.config(
 	...obsidianmd.configs.recommended,
 	comments.recommended,
 	{
+		plugins: { obsidianmd },
 		rules: {
 			'@eslint-community/eslint-comments/require-description': 'error',
 			'@eslint-community/eslint-comments/no-unlimited-disable': 'error',
 			'@eslint-community/eslint-comments/no-unused-disable': 'error',
+			'obsidianmd/ui/sentence-case': ['error', { ignoreWords: ['SRS'] }],
 		},
 	},
 	globalIgnores([

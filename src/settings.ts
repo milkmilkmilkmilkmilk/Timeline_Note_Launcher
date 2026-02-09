@@ -86,9 +86,6 @@ export class TimelineSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// eslint-disable-next-line obsidianmd/settings-tab/no-problematic-settings-headings -- プラグイン名をそのまま見出しに使用
-		new Setting(containerEl).setName('Timeline note launcher').setHeading();
-
 		// === 対象ノート設定 ===
 		new Setting(containerEl).setName('Target notes').setHeading();
 
@@ -96,8 +93,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Target folders')
 			.setDesc('Comma-separated folder paths (empty = all folders)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はユーザー入力例のため
-				.setPlaceholder('folder1, folder2/subfolder')
+				.setPlaceholder('Folder1, folder2/subfolder')
 				.setValue(this.plugin.data.settings.targetFolders.join(', '))
 				.onChange((value) => {
 					this.plugin.data.settings.targetFolders = value
@@ -111,8 +107,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Exclude folders')
 			.setDesc('Comma-separated folder paths to exclude from timeline')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はユーザー入力例のため
-				.setPlaceholder('templates, archive')
+				.setPlaceholder('Templates, archive')
 				.setValue(this.plugin.data.settings.excludeFolders.join(', '))
 				.onChange((value) => {
 					this.plugin.data.settings.excludeFolders = value
@@ -145,8 +140,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.addDropdown(dropdown => dropdown
 				.addOption('random', 'Random')
 				.addOption('age-priority', 'Age priority (older = higher)')
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- SRS は略語のため
-				.addOption('srs', 'SRS (spaced repetition)')
+				.addOption('srs', 'Spaced repetition (SRS)')
 				.setValue(this.plugin.data.settings.selectionMode)
 				.onChange(async (value) => {
 					this.plugin.data.settings.selectionMode = value as SelectionMode;
@@ -438,8 +432,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Difficulty YAML key')
 			.setDesc('Read difficulty from this frontmatter key (leave empty to ignore)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
-				.setPlaceholder('difficulty')
+				.setPlaceholder('Difficulty')
 				.setValue(this.plugin.data.settings.yamlDifficultyKey)
 				.onChange(async (value) => {
 					this.plugin.data.settings.yamlDifficultyKey = value.trim();
@@ -450,8 +443,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Priority YAML key')
 			.setDesc('Read priority from this frontmatter key (higher = shown first)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
-				.setPlaceholder('priority')
+				.setPlaceholder('Priority')
 				.setValue(this.plugin.data.settings.yamlPriorityKey)
 				.onChange(async (value) => {
 					this.plugin.data.settings.yamlPriorityKey = value.trim();
@@ -462,8 +454,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Date YAML key')
 			.setDesc('Read note creation date from this frontmatter key for age-priority mode (e.g., created, date)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder is frontmatter key name
-				.setPlaceholder('created')
+				.setPlaceholder('Created')
 				.setValue(this.plugin.data.settings.yamlDateField)
 				.onChange(async (value) => {
 					this.plugin.data.settings.yamlDateField = value.trim();
@@ -503,8 +494,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 			.setName('Quick note folder')
 			.setDesc('Folder to save quick notes (empty = vault root)')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder はフォルダパス例のため
-				.setPlaceholder('notes/quick')
+				.setPlaceholder('Notes/quick')
 				.setValue(this.plugin.data.settings.quickNoteFolder)
 				.onChange(async (value) => {
 					this.plugin.data.settings.quickNoteFolder = value.trim();

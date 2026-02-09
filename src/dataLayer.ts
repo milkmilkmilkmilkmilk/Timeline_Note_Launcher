@@ -249,8 +249,8 @@ let bookmarkedPathsCache: { paths: Set<string>; timestamp: number } | null = nul
  * ブックマークプラグインを取得するヘルパー
  */
 export function getBookmarksPlugin(app: App): BookmarkInternalPlugin | null {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access -- Obsidian 内部 API (internalPlugins) に型定義がないため
-	const plugin = (app as any).internalPlugins?.plugins?.bookmarks as BookmarkInternalPlugin | undefined;
+	const plugin = (app as unknown as { internalPlugins?: { plugins?: { bookmarks?: BookmarkInternalPlugin } } })
+		.internalPlugins?.plugins?.bookmarks;
 	if (!plugin?.enabled || !plugin.instance) return null;
 	return plugin;
 }
