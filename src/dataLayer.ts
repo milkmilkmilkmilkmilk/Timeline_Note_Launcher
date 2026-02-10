@@ -1376,7 +1376,7 @@ export function calculateStatistics(
 		// ファイルタイプ別を加算
 		if (data?.fileTypes) {
 			for (const [type, cnt] of Object.entries(data.fileTypes)) {
-				fileTypeBreakdown[type as keyof typeof fileTypeBreakdown] += cnt;
+				fileTypeBreakdown[type as keyof typeof fileTypeBreakdown] += Number(cnt);
 			}
 		}
 	}
