@@ -13,6 +13,8 @@ import { createPullToRefreshState, handleTouchStart, handleTouchMove, handleTouc
 import type { PullToRefreshState } from './pullToRefresh';
 import { createDefaultFilterBarState, collectAllTags, applyFilters, renderFilterBar, updateFilterBarUI } from './filterBar';
 import type { FilterBarState, FilterBarContext } from './filterBar';
+import { handleKeydown } from './keyboardNav';
+import type { KeyboardNavContext } from './keyboardNav';
 
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
 
@@ -57,7 +59,7 @@ export class TimelineView extends ItemView {
 		super(leaf);
 		this.plugin = plugin;
 		this.renderComponent = new Component();
-		this.keydownHandler = this.handleKeydown.bind(this);
+		this.keydownHandler = (e: KeyboardEvent) => handleKeydown(this.getKeyboardNavContext(), e);
 		this.scrollHandler = this.handleScroll.bind(this);
 		// プルトゥリフレッシュ用
 		this.touchStartHandler = (e: TouchEvent) => handleTouchStart(this.pullState, this.listContainerEl, e);
@@ -1495,286 +1497,21 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * キーボードショートカットハンドラー
+	 * キーボードナビゲーションのコンテキストを取得
 	 */
-	private handleKeydown(e: KeyboardEvent): void {
-		// 入力フィールドにフォーカスがある場合は無視
-		const target = e.target as HTMLElement;
-		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-			return;
-		}
-
-		switch (e.key) {
-			case 'j':
-			case 'ArrowDown':
-				e.preventDefault();
-				this.focusNextCard();
-				break;
-			case 'k':
-			case 'ArrowUp':
-				e.preventDefault();
-				this.focusPrevCard();
-				break;
-			case 'o':
-			case 'Enter':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					void this.openFocusedCard();
-				}
-				break;
-			case '1':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					void this.rateFocusedCard('again');
-				}
-				break;
-			case '2':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					void this.rateFocusedCard('hard');
-				}
-				break;
-			case '3':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					void this.rateFocusedCard('good');
-				}
-				break;
-			case '4':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					void this.rateFocusedCard('easy');
-				}
-				break;
-			case 'b':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					this.toggleFocusedBookmark();
-				}
-				break;
-			case 'c':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					this.openFocusedComment();
-				}
-				break;
-			case 'q':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					this.openFocusedQuoteNote();
-				}
-				break;
-			case 'l':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					this.openFocusedLinkNote();
-				}
-				break;
-			case 'u':
-				if (this.focusedIndex >= 0) {
-					e.preventDefault();
-					void this.undoFocusedCard();
-				}
-				break;
-			case 'r':
-				e.preventDefault();
-				void this.refresh();
-				break;
-			case 'Escape':
-				e.preventDefault();
-				this.clearFocus();
-				break;
-		}
-	}
-
-	/**
-	 * 次のカードにフォーカス
-	 */
-	private focusNextCard(): void {
-		if (this.cardElements.length === 0) return;
-
-		const newIndex = this.focusedIndex < this.cardElements.length - 1
-			? this.focusedIndex + 1
-			: 0;
-		this.setFocusedIndex(newIndex);
-	}
-
-	/**
-	 * 前のカードにフォーカス
-	 */
-	private focusPrevCard(): void {
-		if (this.cardElements.length === 0) return;
-
-		const newIndex = this.focusedIndex > 0
-			? this.focusedIndex - 1
-			: this.cardElements.length - 1;
-		this.setFocusedIndex(newIndex);
-	}
-
-	/**
-	 * フォーカスインデックスを設定
-	 */
-	private setFocusedIndex(index: number): void {
-		// 前のフォーカスを解除
-		if (this.focusedIndex >= 0 && this.focusedIndex < this.cardElements.length) {
-			const prevEl = this.cardElements[this.focusedIndex];
-			if (prevEl) {
-				prevEl.removeClass('timeline-card-focused');
-			}
-		}
-
-		// 新しいフォーカスを設定
-		this.focusedIndex = index;
-		if (index >= 0 && index < this.cardElements.length) {
-			const cardEl = this.cardElements[index];
-			if (cardEl) {
-				cardEl.addClass('timeline-card-focused');
-				cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-			}
-		}
-	}
-
-	/**
-	 * フォーカスをクリア
-	 */
-	private clearFocus(): void {
-		if (this.focusedIndex >= 0 && this.focusedIndex < this.cardElements.length) {
-			const el = this.cardElements[this.focusedIndex];
-			if (el) {
-				el.removeClass('timeline-card-focused');
-			}
-		}
-		this.focusedIndex = -1;
-	}
-
-	/**
-	 * フォーカス中のカードを開く
-	 */
-	private async openFocusedCard(): Promise<void> {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-		const card = this.filteredCards[this.focusedIndex];
-		if (card) {
-			await this.openNote(card);
-		}
-	}
-
-	/**
-	 * フォーカス中のカードに難易度評価
-	 */
-	private async rateFocusedCard(rating: DifficultyRating): Promise<void> {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-
-		const card = this.filteredCards[this.focusedIndex];
-		if (!card) return;
-
-		await this.plugin.rateCard(card.path, rating);
-		const cardEl = this.cardElements[this.focusedIndex];
-		if (cardEl) {
-			cardEl.addClass('timeline-card-reviewed');
-			// Undoボタンを表示
-			const buttonsEl = cardEl.querySelector('.timeline-difficulty-buttons') as HTMLElement;
-			if (buttonsEl) {
-				this.replaceWithUndoButton(buttonsEl, card);
-			}
-		}
-
-		// 次のカードにフォーカス
-		if (this.focusedIndex < this.cardElements.length - 1) {
-			this.setFocusedIndex(this.focusedIndex + 1);
-		}
-	}
-
-	/**
-	 * フォーカス中のカードの評価を取り消し
-	 */
-	private async undoFocusedCard(): Promise<void> {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-
-		const card = this.filteredCards[this.focusedIndex];
-		if (!card) return;
-		if (!this.plugin.hasUndoForCard(card.path)) return;
-
-		const success = await this.plugin.undoRating(card.path);
-		if (!success) return;
-
-		const cardEl = this.cardElements[this.focusedIndex];
-		if (cardEl) {
-			cardEl.removeClass('timeline-card-reviewed');
-			// 難易度ボタンを再描画
-			const buttonsEl = cardEl.querySelector('.timeline-difficulty-buttons') as HTMLElement;
-			if (buttonsEl) {
-				buttonsEl.removeClass('timeline-difficulty-undo');
-				buttonsEl.empty();
-				this.createDifficultyButtons(buttonsEl, card);
-			}
-		}
-	}
-
-	/**
-	 * フォーカス中のカードのブックマークをトグル
-	 */
-	private toggleFocusedBookmark(): void {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-
-		const card = this.filteredCards[this.focusedIndex];
-		if (!card) return;
-
-		const nowBookmarked = this.toggleBookmark(card.path);
-
-		// ブックマークボタンのUIを更新
-		const cardEl = this.cardElements[this.focusedIndex];
-		if (cardEl) {
-			const bookmarkBtn = cardEl.querySelector('.timeline-bookmark-btn') as HTMLElement;
-			if (bookmarkBtn) {
-				bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
-			}
-		}
-	}
-
-	/**
-	 * フォーカス中のカードのコメントモーダルを開く
-	 */
-	private openFocusedComment(): void {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-
-		const card = this.filteredCards[this.focusedIndex];
-		if (!card) return;
-
-		const file = this.app.vault.getAbstractFileByPath(card.path);
-		if (file && file instanceof TFile) {
-			const modal = new CommentModal(this.app, this.plugin, file);
-			modal.open();
-		}
-	}
-
-	/**
-	 * フォーカス中のカードの引用ノートモーダルを開く
-	 */
-	private openFocusedQuoteNote(): void {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-
-		const card = this.filteredCards[this.focusedIndex];
-		if (!card) return;
-
-		const file = this.app.vault.getAbstractFileByPath(card.path);
-		if (file && file instanceof TFile) {
-			const modal = new QuoteNoteModal(this.app, this.plugin, file);
-			modal.open();
-		}
-	}
-
-	/**
-	 * フォーカス中のカードのリンクノートモーダルを開く
-	 */
-	private openFocusedLinkNote(): void {
-		if (this.focusedIndex < 0 || this.focusedIndex >= this.filteredCards.length) return;
-
-		const card = this.filteredCards[this.focusedIndex];
-		if (!card) return;
-
-		const file = this.app.vault.getAbstractFileByPath(card.path);
-		if (file && file instanceof TFile) {
-			new LinkNoteModal(this.app, this.plugin, file).open();
-		}
+	private getKeyboardNavContext(): KeyboardNavContext {
+		return {
+			filteredCards: this.filteredCards,
+			cardElements: this.cardElements,
+			focusedIndex: this.focusedIndex,
+			updateFocusedIndex: (index: number) => { this.focusedIndex = index; },
+			plugin: this.plugin,
+			app: this.app,
+			openNote: (card) => this.openNote(card),
+			createDifficultyButtons: (c, card) => this.createDifficultyButtons(c, card),
+			replaceWithUndoButton: (c, card) => this.replaceWithUndoButton(c, card),
+			toggleBookmark: (path) => this.toggleBookmark(path),
+			refresh: () => this.refresh(),
+		};
 	}
 }
