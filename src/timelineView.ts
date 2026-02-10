@@ -6,42 +6,7 @@ import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
 import { LinkNoteModal } from './linkNoteModal';
 import type TimelineNoteLauncherPlugin from './main';
-
-/**
- * 配列の内容が等しいかを比較
- */
-function arraysEqual(a: string[], b: string[]): boolean {
-	if (a.length !== b.length) return false;
-	for (let i = 0; i < a.length; i++) {
-		if (a[i] !== b[i]) return false;
-	}
-	return true;
-}
-
-/**
- * プロパティ値を表示用文字列に変換
- */
-function formatPropertyValue(value: unknown): string {
-	if (Array.isArray(value)) {
-		return value.map(String).join(', ');
-	}
-	if (value !== null && typeof value === 'object') {
-		return JSON.stringify(value);
-	}
-	return String(value);
-}
-
-/**
- * カードの更新検知用キー
- */
-function buildCardStateKey(card: TimelineCard): string {
-	return [
-		card.path,
-		String(card.lastReviewedAt ?? ''),
-		String(card.reviewCount),
-		String(card.nextReviewAt ?? ''),
-	].join('|');
-}
+import { arraysEqual, buildCardStateKey, formatPropertyValue, formatRelativeDate, getFileTypeIcon } from './timelineViewUtils';
 
 /**
  * シンプルな入力モーダル（プリセット名入力用）
@@ -1089,7 +1054,7 @@ export class TimelineView extends ItemView {
 		headerEl.createSpan({ cls: 'timeline-card-header-separator', text: ' · ' });
 		if (card.lastReviewedAt) {
 			const date = new Date(card.lastReviewedAt);
-			headerEl.createSpan({ cls: 'timeline-card-header-time', text: this.formatRelativeDate(date) });
+			headerEl.createSpan({ cls: 'timeline-card-header-time', text: formatRelativeDate(date) });
 		} else {
 			headerEl.createSpan({ cls: 'timeline-card-header-time', text: 'New' });
 		}
@@ -1163,7 +1128,7 @@ export class TimelineView extends ItemView {
 
 		// ファイルタイプバッジ（非マークダウンの場合）
 		if (card.fileType !== 'markdown') {
-			const typeIcon = this.getFileTypeIcon(card.fileType);
+			const typeIcon = getFileTypeIcon(card.fileType);
 			titleRow.createSpan({
 				cls: `timeline-badge timeline-badge-filetype timeline-badge-${card.fileType}`,
 				text: typeIcon,
@@ -1402,7 +1367,7 @@ export class TimelineView extends ItemView {
 
 			if (card.lastReviewedAt) {
 				const date = new Date(card.lastReviewedAt);
-				const dateStr = this.formatRelativeDate(date);
+				const dateStr = formatRelativeDate(date);
 				metaEl.createSpan({ text: `🕐 ${dateStr}` });
 			}
 
@@ -1583,7 +1548,7 @@ export class TimelineView extends ItemView {
 			}
 		} else {
 			// 画像がない場合はファイルタイプアイコンを表示
-			const icon = this.getFileTypeIcon(card.fileType);
+			const icon = getFileTypeIcon(card.fileType);
 			thumbnailEl.createDiv({
 				cls: 'timeline-grid-card-icon',
 				text: icon,
@@ -1592,7 +1557,7 @@ export class TimelineView extends ItemView {
 
 		// ファイルタイプバッジ
 		if (card.fileType !== 'markdown') {
-			const typeIcon = this.getFileTypeIcon(card.fileType);
+			const typeIcon = getFileTypeIcon(card.fileType);
 			thumbnailEl.createSpan({
 				cls: `timeline-grid-badge timeline-badge-${card.fileType}`,
 				text: typeIcon,
@@ -2220,15 +2185,6 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * 次フレームまで待機
-	 */
-	private waitForAnimationFrame(): Promise<void> {
-		return new Promise((resolve) => {
-			window.requestAnimationFrame(() => resolve());
-		});
-	}
-
-	/**
 	 * 難易度ボタンを作成
 	 */
 	private createDifficultyButtons(container: HTMLElement, card: TimelineCard): void {
@@ -2361,39 +2317,6 @@ export class TimelineView extends ItemView {
 
 		// Markdownビューがあればそれを優先
 		return foundMarkdownLeaf || targetLeaf;
-	}
-
-	/**
-	 * 相対日付フォーマット
-	 */
-	private formatRelativeDate(date: Date): string {
-		const now = new Date();
-		const diffMs = now.getTime() - date.getTime();
-		const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-		if (diffDays === 0) return 'today';
-		if (diffDays === 1) return 'yesterday';
-		if (diffDays < 7) return `${diffDays}d ago`;
-		if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-		return `${Math.floor(diffDays / 30)}mo ago`;
-	}
-
-	/**
-	 * ファイルタイプアイコンを取得
-	 */
-	private getFileTypeIcon(fileType: string): string {
-		switch (fileType) {
-			case 'text': return '📄';
-			case 'image': return 'IMG';
-			case 'pdf': return '📕';
-			case 'audio': return '🎵';
-			case 'video': return '🎬';
-			case 'office': return '📊';
-			case 'ipynb': return '🐍';
-			case 'excalidraw': return '🎨';
-			case 'canvas': return '🔲';
-			default: return '📁';
-		}
 	}
 
 	/**
