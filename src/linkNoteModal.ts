@@ -1,9 +1,11 @@
 // Timeline Note Launcher - Link Note Modal
 import { App, Modal, Platform, TFile } from 'obsidian';
 import { appendLinksToNote, extractOutgoingLinks, getCompanionNotePath, getFileTypeFromFile } from './dataLayer';
-import { FileType, LinkedNote } from './types';
+import type TimelineNoteLauncherPlugin from './main';
+import type { FileType, LinkedNote } from './types';
 
 export class LinkNoteModal extends Modal {
+	private plugin: TimelineNoteLauncherPlugin;
 	private file: TFile;
 	private fileType: FileType;
 	private existingLinks: LinkedNote[] = [];
@@ -15,8 +17,9 @@ export class LinkNoteModal extends Modal {
 	private existingPaths: Set<string>;
 	private allMarkdownFiles: TFile[];
 
-	constructor(app: App, file: TFile) {
+	constructor(app: App, plugin: TimelineNoteLauncherPlugin, file: TFile) {
 		super(app);
+		this.plugin = plugin;
 		this.file = file;
 		this.fileType = getFileTypeFromFile(file);
 	}
@@ -127,12 +130,10 @@ export class LinkNoteModal extends Modal {
 			void this.confirmLinks();
 		});
 
-		// Ctrl+Enter で確定
-		contentEl.addEventListener('keydown', (e) => {
-			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
-				void this.confirmLinks();
-			}
+		// Ctrl+Enter / Cmd+Enter で確定
+		this.scope.register(['Mod'], 'Enter', () => {
+			void this.confirmLinks();
+			return false;
 		});
 
 		// モバイル: キーボード表示時にモーダルを上に配置
@@ -153,6 +154,7 @@ export class LinkNoteModal extends Modal {
 		if (this.debounceTimer !== null) {
 			window.clearTimeout(this.debounceTimer);
 		}
+		this.contentEl.empty();
 	}
 
 	private performSearch(query: string): void {

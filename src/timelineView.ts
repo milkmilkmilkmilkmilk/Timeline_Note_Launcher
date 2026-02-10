@@ -1137,7 +1137,7 @@ export class TimelineView extends ItemView {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
 				if (file && file instanceof TFile) {
-					new LinkNoteModal(this.app, file).open();
+					new LinkNoteModal(this.app, this.plugin, file).open();
 				}
 			});
 		}
@@ -1231,7 +1231,7 @@ export class TimelineView extends ItemView {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
 				if (file && file instanceof TFile) {
-					new LinkNoteModal(this.app, file).open();
+					new LinkNoteModal(this.app, this.plugin, file).open();
 				}
 			});
 		}
@@ -1470,7 +1470,7 @@ export class TimelineView extends ItemView {
 				e.stopPropagation();
 				const file = this.app.vault.getAbstractFileByPath(card.path);
 				if (file && file instanceof TFile) {
-					new LinkNoteModal(this.app, file).open();
+					new LinkNoteModal(this.app, this.plugin, file).open();
 				}
 			});
 		}
@@ -2903,7 +2903,7 @@ export class TimelineView extends ItemView {
 
 		const file = this.app.vault.getAbstractFileByPath(card.path);
 		if (file && file instanceof TFile) {
-			new LinkNoteModal(this.app, file).open();
+			new LinkNoteModal(this.app, this.plugin, file).open();
 		}
 	}
 }
