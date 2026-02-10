@@ -182,12 +182,10 @@ export class QuoteNoteModal extends Modal {
 			document.addEventListener('selectionchange', this.handleSelectionChange);
 		}
 
-		// Enter + Ctrl/Cmd で作成
-		this.commentTextArea.addEventListener('keydown', (e) => {
-			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
-				void this.createNote();
-			}
+		// Ctrl+Enter / Cmd+Enter で作成
+		this.scope.register(['Mod'], 'Enter', () => {
+			void this.createNote();
+			return false;
 		});
 
 		// モバイル: キーボード表示時にモーダルを上に配置
@@ -219,6 +217,7 @@ export class QuoteNoteModal extends Modal {
 			title: this.titleInput?.value ?? '',
 			comment: this.commentTextArea?.value ?? '',
 		});
+		this.contentEl.empty();
 	}
 
 	private handleSelectionChange = (): void => {

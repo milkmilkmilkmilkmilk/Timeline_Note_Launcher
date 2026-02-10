@@ -114,12 +114,10 @@ export class CommentModal extends Modal {
 			this.updateSaveButtonState();
 		});
 
-		// Enter + Ctrl/Cmd で保存
-		this.textArea.addEventListener('keydown', (e) => {
-			if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-				e.preventDefault();
-				void this.saveComment();
-			}
+		// Ctrl+Enter / Cmd+Enter で保存
+		this.scope.register(['Mod'], 'Enter', () => {
+			void this.saveComment();
+			return false;
 		});
 
 		// モバイル: キーボード表示時にモーダルを上に配置
@@ -182,6 +180,7 @@ export class CommentModal extends Modal {
 		// モーダルを閉じるときにドラフトを保存
 		const comment = this.textArea?.value ?? '';
 		void this.plugin.saveCommentDraft(this.file.path, comment);
+		this.contentEl.empty();
 	}
 
 	private updateSaveButtonState(): void {
