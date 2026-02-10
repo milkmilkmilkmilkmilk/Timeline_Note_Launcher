@@ -9,6 +9,8 @@ import type TimelineNoteLauncherPlugin from './main';
 import { arraysEqual, buildCardStateKey, formatPropertyValue, formatRelativeDate, getFileTypeIcon } from './timelineViewUtils';
 import { activatePendingEmbeds, renderOfficeFallback } from './embedRenderers';
 import type { EmbedRenderContext } from './pdfRenderer';
+import { createPullToRefreshState, handleTouchStart, handleTouchMove, handleTouchEnd } from './pullToRefresh';
+import type { PullToRefreshState } from './pullToRefresh';
 
 /**
  * シンプルな入力モーダル（プリセット名入力用）
@@ -116,9 +118,7 @@ export class TimelineView extends ItemView {
 	// 遅延レンダリング用：DOM接続後に処理するコンテナ→カードデータの対応（PDF/Excalidraw）
 	private pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }> = new Map();
 	// プルトゥリフレッシュ用
-	private pullToRefreshStartY: number = 0;
-	private pullToRefreshTriggered: boolean = false;
-	private pullIndicatorEl: HTMLElement | null = null;
+	private pullState: PullToRefreshState = createPullToRefreshState();
 	private touchStartHandler: (e: TouchEvent) => void;
 	private touchMoveHandler: (e: TouchEvent) => void;
 	private touchEndHandler: (e: TouchEvent) => void;
@@ -130,9 +130,9 @@ export class TimelineView extends ItemView {
 		this.keydownHandler = this.handleKeydown.bind(this);
 		this.scrollHandler = this.handleScroll.bind(this);
 		// プルトゥリフレッシュ用
-		this.touchStartHandler = this.handleTouchStart.bind(this);
-		this.touchMoveHandler = this.handleTouchMove.bind(this);
-		this.touchEndHandler = this.handleTouchEnd.bind(this);
+		this.touchStartHandler = (e: TouchEvent) => handleTouchStart(this.pullState, this.listContainerEl, e);
+		this.touchMoveHandler = (e: TouchEvent) => handleTouchMove(this.pullState, this.listContainerEl, e);
+		this.touchEndHandler = () => handleTouchEnd(this.pullState, this.listContainerEl, () => this.refresh());
 	}
 
 	getViewType(): string {
@@ -1872,108 +1872,6 @@ export class TimelineView extends ItemView {
 
 		// フッターを更新
 		this.updateFooter();
-	}
-
-	/**
-	 * タッチ開始ハンドラー（プルトゥリフレッシュ用）
-	 */
-	private handleTouchStart(e: TouchEvent): void {
-		if (this.listContainerEl.scrollTop === 0) {
-			const touch = e.touches[0];
-			if (touch) {
-				this.pullToRefreshStartY = touch.clientY;
-			}
-		}
-	}
-
-	/**
-	 * タッチ移動ハンドラー（プルトゥリフレッシュ用）
-	 */
-	private handleTouchMove(e: TouchEvent): void {
-		if (this.pullToRefreshStartY === 0) return;
-		if (this.listContainerEl.scrollTop > 0) {
-			this.pullToRefreshStartY = 0;
-			this.hidePullIndicator();
-			return;
-		}
-
-		const touch = e.touches[0];
-		if (!touch) return;
-
-		const pullDistance = touch.clientY - this.pullToRefreshStartY;
-		const threshold = 80;
-
-		if (pullDistance > 0) {
-			// 引っ張り中 - デフォルトのスクロールを阻止
-			e.preventDefault();
-
-			// インジケーターを表示・更新
-			this.showPullIndicator(pullDistance, threshold);
-
-			if (pullDistance >= threshold) {
-				this.pullToRefreshTriggered = true;
-			} else {
-				this.pullToRefreshTriggered = false;
-			}
-		}
-	}
-
-	/**
-	 * タッチ終了ハンドラー（プルトゥリフレッシュ用）
-	 */
-	private handleTouchEnd(_e: TouchEvent): void {
-		if (this.pullToRefreshTriggered) {
-			this.pullToRefreshTriggered = false;
-			this.showPullIndicator(0, 80, true);  // ローディング状態を表示
-			void this.refresh().then(() => {
-				this.hidePullIndicator();
-			});
-		} else {
-			this.hidePullIndicator();
-		}
-		this.pullToRefreshStartY = 0;
-	}
-
-	/**
-	 * プルインジケーターを表示
-	 */
-	private showPullIndicator(distance: number, threshold: number, loading: boolean = false): void {
-		if (!this.pullIndicatorEl) {
-			this.pullIndicatorEl = createDiv({ cls: 'timeline-pull-indicator' });
-			this.listContainerEl.insertBefore(this.pullIndicatorEl, this.listContainerEl.firstChild);
-		}
-
-		const progress = Math.min(distance / threshold, 1);
-		const height = Math.min(distance * 0.5, 60);
-
-		this.pullIndicatorEl.style.height = `${height}px`;
-		this.pullIndicatorEl.style.opacity = String(progress);
-
-		this.pullIndicatorEl.empty();
-		if (loading) {
-			this.pullIndicatorEl.createSpan({ cls: 'timeline-pull-spinner' });
-			this.pullIndicatorEl.createSpan({ text: 'Refreshing...' });
-			this.pullIndicatorEl.classList.add('is-loading');
-		} else if (progress >= 1) {
-			this.pullIndicatorEl.createSpan({ text: '↓' });
-			this.pullIndicatorEl.createSpan({ text: 'Release to refresh' });
-			this.pullIndicatorEl.classList.add('is-ready');
-			this.pullIndicatorEl.classList.remove('is-loading');
-		} else {
-			this.pullIndicatorEl.createSpan({ text: '↓' });
-			this.pullIndicatorEl.createSpan({ text: 'Pull to refresh' });
-			this.pullIndicatorEl.classList.remove('is-ready', 'is-loading');
-		}
-	}
-
-	/**
-	 * プルインジケーターを非表示
-	 */
-	private hidePullIndicator(): void {
-		if (this.pullIndicatorEl) {
-			this.pullIndicatorEl.remove();
-			this.pullIndicatorEl = null;
-		}
 	}
 
 	/**
