@@ -497,7 +497,7 @@ export async function createCardElement(ctx: CardRenderContext, card: TimelineCa
 /**
  * グリッドカード要素を作成（画像中心の表示）
  */
-export async function createGridCardElement(ctx: CardRenderContext, card: TimelineCard): Promise<HTMLElement> {
+export function createGridCardElement(ctx: CardRenderContext, card: TimelineCard): HTMLElement {
 	const cardEl = createDiv({ cls: ['timeline-grid-card', `timeline-card-type-${card.fileType}`] });
 	if (card.pinned) {
 		cardEl.addClass('timeline-card-pinned');

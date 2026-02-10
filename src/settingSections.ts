@@ -327,8 +327,7 @@ export function buildDisplaySection(ctx: SettingSectionContext): void {
 			.setName('Property keys')
 			.setDesc('Comma-separated frontmatter keys to display')
 			.addText(text => text
-				// eslint-disable-next-line obsidianmd/ui/sentence-case -- placeholder は frontmatter キー名のため
-				.setPlaceholder('status, category, author')
+				.setPlaceholder('Status, category, author')
 				.setValue(ctx.plugin.data.settings.propertiesKeys)
 				.onChange((value) => {
 					ctx.plugin.data.settings.propertiesKeys = value;
