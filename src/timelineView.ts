@@ -1,6 +1,6 @@
 // Timeline Note Launcher - Timeline View
 import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component, Menu, setIcon } from 'obsidian';
-import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE, FilterPreset } from './types';
+import { TimelineCard, DifficultyRating, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 import { getNextIntervals, getBookmarkedPaths, getBookmarksPlugin, clearBookmarkCache } from './dataLayer';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
@@ -11,7 +11,8 @@ import { activatePendingEmbeds, renderOfficeFallback } from './embedRenderers';
 import type { EmbedRenderContext } from './pdfRenderer';
 import { createPullToRefreshState, handleTouchStart, handleTouchMove, handleTouchEnd } from './pullToRefresh';
 import type { PullToRefreshState } from './pullToRefresh';
-import { TextInputModal } from './textInputModal';
+import { createDefaultFilterBarState, collectAllTags, applyFilters, renderFilterBar, updateFilterBarUI } from './filterBar';
+import type { FilterBarState, FilterBarContext } from './filterBar';
 
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
 
@@ -28,13 +29,7 @@ export class TimelineView extends ItemView {
 	private cardElements: HTMLElement[] = [];
 	private keydownHandler: (e: KeyboardEvent) => void;
 	// フィルタ状態
-	private searchQuery: string = '';
-	private fileTypeFilters: Set<string> = new Set(['markdown', 'text', 'image', 'pdf', 'audio', 'video', 'office', 'ipynb', 'excalidraw', 'canvas', 'other']);
-	private selectedTags: Set<string> = new Set();
-	private searchDebounceTimer: number | null = null;
-	// 日付範囲フィルタ
-	private dateFilterStart: string = '';  // YYYY-MM-DD形式
-	private dateFilterEnd: string = '';    // YYYY-MM-DD形式
+	private filterState: FilterBarState = createDefaultFilterBarState();
 	// 直前にアクティブだったleaf（タイムライン以外）
 	private previousActiveLeaf: WorkspaceLeaf | null = null;
 	// 差分レンダリング用：前回のカードパス
@@ -45,7 +40,6 @@ export class TimelineView extends ItemView {
 	private cachedBookmarkedPaths: Set<string> | null = null;
 	// タグキャッシュ（refresh()時に更新）
 	private cachedAllTags: string[] = [];
-	private isTagsCollapsed: boolean = false;
 	// 無限スクロール用
 	private displayedCount: number = 0;
 	private isLoadingMore: boolean = false;
@@ -184,9 +178,9 @@ export class TimelineView extends ItemView {
 		// スクロール位置を保存
 		this.scrollPosition = this.listContainerEl.scrollTop;
 		// 検索デバウンスタイマーを解除
-		if (this.searchDebounceTimer !== null) {
-			window.clearTimeout(this.searchDebounceTimer);
-			this.searchDebounceTimer = null;
+		if (this.filterState.searchDebounceTimer !== null) {
+			window.clearTimeout(this.filterState.searchDebounceTimer);
+			this.filterState.searchDebounceTimer = null;
 		}
 		// レンダリングコンポーネントをアンロード
 		this.renderComponent.unload();
@@ -221,7 +215,7 @@ export class TimelineView extends ItemView {
 		// カードを取得
 		const result = await this.plugin.getTimelineCards();
 		this.cards = result.cards;
-		this.cachedAllTags = this.collectAllTags();
+		this.cachedAllTags = collectAllTags(this.cards);
 		this.newCount = result.newCount;
 		this.dueCount = result.dueCount;
 
@@ -358,10 +352,10 @@ export class TimelineView extends ItemView {
 		this.renderComposeBox();
 
 		// フィルタバーを描画
-		this.renderFilterBar();
+		renderFilterBar(this.getFilterBarContext());
 
 		// フィルタを適用
-		this.applyFilters();
+		this.filteredCards = applyFilters(this.cards, this.filterState);
 
 		// カード数表示（フィルタ後）
 		const countText = this.filteredCards.length === this.cards.length
@@ -568,333 +562,20 @@ export class TimelineView extends ItemView {
 	/**
 	 * フィルタバーを描画
 	 */
-	private renderFilterBar(): void {
-		const filterBar = this.listContainerEl.createDiv({ cls: 'timeline-filter-bar' });
-
-		// 検索セクション
-		const searchSection = filterBar.createDiv({ cls: 'timeline-filter-search' });
-		const searchIcon = searchSection.createSpan({ cls: 'timeline-search-icon', text: '🔍' });
-		searchIcon.setAttribute('aria-hidden', 'true');
-		const searchInput = searchSection.createEl('input', {
-			cls: 'timeline-search-input',
-			attr: {
-				type: 'text',
-				placeholder: 'Search...',
-				value: this.searchQuery,
-			},
-		});
-		searchInput.addEventListener('input', (e) => {
-			const value = (e.target as HTMLInputElement).value;
-			this.handleSearchInput(value);
-		});
-
-		// 日付範囲フィルタ
-		const dateSection = filterBar.createDiv({ cls: 'timeline-filter-dates' });
-		dateSection.createSpan({ cls: 'timeline-filter-dates-label', text: 'Date:' });
-		const dateStartInput = dateSection.createEl('input', {
-			cls: 'timeline-date-input',
-			attr: {
-				type: 'date',
-				value: this.dateFilterStart,
-				'aria-label': 'Filter start date',
-			},
-		});
-		dateSection.createSpan({ text: '-' });
-		const dateEndInput = dateSection.createEl('input', {
-			cls: 'timeline-date-input',
-			attr: {
-				type: 'date',
-				value: this.dateFilterEnd,
-				'aria-label': 'Filter end date',
-			},
-		});
-		dateStartInput.addEventListener('change', (e) => {
-			this.dateFilterStart = (e.target as HTMLInputElement).value;
-			void this.renderCardList();
-		});
-		dateEndInput.addEventListener('change', (e) => {
-			this.dateFilterEnd = (e.target as HTMLInputElement).value;
-			void this.renderCardList();
-		});
-		// クリアボタン
-		if (this.dateFilterStart || this.dateFilterEnd) {
-			const clearBtn = dateSection.createEl('button', {
-				cls: 'timeline-date-clear-btn',
-				text: '✕',
-				attr: { 'aria-label': 'Clear date filter' },
-			});
-			clearBtn.addEventListener('click', () => {
-				this.dateFilterStart = '';
-				this.dateFilterEnd = '';
-				void this.renderCardList();
-			});
-		}
-
-		// ファイルタイプフィルタ
-		const typeFilters = filterBar.createDiv({ cls: 'timeline-filter-types' });
-		const fileTypes: { type: string; icon: string; label: string }[] = [
-			{ type: 'markdown', icon: '📝', label: 'Markdown' },
-			{ type: 'text', icon: '📄', label: 'Text' },
-			{ type: 'image', icon: 'IMG', label: 'Image' },
-			{ type: 'pdf', icon: '📕', label: 'PDF' },
-			{ type: 'audio', icon: '🎵', label: 'Audio' },
-			{ type: 'video', icon: '🎬', label: 'Video' },
-			{ type: 'office', icon: '📊', label: 'Office' },
-			{ type: 'ipynb', icon: '🐍', label: 'Jupyter' },
-			{ type: 'excalidraw', icon: '🎨', label: 'Excalidraw' },
-			{ type: 'canvas', icon: '🔲', label: 'Canvas' },
-		];
-
-		for (const ft of fileTypes) {
-			const isActive = this.fileTypeFilters.has(ft.type);
-			const btn = typeFilters.createEl('button', {
-				cls: `timeline-filter-type-btn ${isActive ? 'is-active' : ''}`,
-				attr: { 'aria-label': ft.label, 'data-type': ft.type },
-			});
-			btn.textContent = ft.label;
-			btn.addEventListener('click', () => this.toggleFileTypeFilter(ft.type));
-		}
-
-		// タグフィルタ
-		const allTags = this.cachedAllTags;
-		if (allTags.length > 0) {
-			const tagSection = filterBar.createDiv({ cls: 'timeline-filter-tags' });
-			tagSection.createSpan({ cls: 'timeline-filter-tags-label', text: 'Tags:' });
-			const toggleBtn = tagSection.createEl('button', {
-				cls: 'timeline-filter-tags-toggle',
-				text: this.isTagsCollapsed ? 'Show' : 'Hide',
-				attr: {
-					'aria-label': this.isTagsCollapsed ? 'Show tags' : 'Hide tags',
-					'aria-pressed': String(this.isTagsCollapsed),
-				},
-			});
-			const updateToggleState = () => {
-				tagSection.toggleClass('is-collapsed', this.isTagsCollapsed);
-				toggleBtn.textContent = this.isTagsCollapsed ? 'Show' : 'Hide';
-				toggleBtn.setAttribute('aria-label', this.isTagsCollapsed ? 'Show tags' : 'Hide tags');
-				toggleBtn.setAttribute('aria-pressed', String(this.isTagsCollapsed));
-			};
-			updateToggleState();
-			toggleBtn.addEventListener('click', (e) => {
-				e.stopPropagation();
-				this.isTagsCollapsed = !this.isTagsCollapsed;
-				updateToggleState();
-			});
-			const tagChips = tagSection.createDiv({ cls: 'timeline-filter-tag-chips' });
-
-			for (const tag of allTags.slice(0, 10)) {
-				const isSelected = this.selectedTags.has(tag);
-				const chip = tagChips.createEl('button', {
-					cls: `timeline-filter-tag-chip ${isSelected ? 'is-selected' : ''}`,
-					text: tag,
-				});
-				chip.addEventListener('click', () => this.toggleTagFilter(tag));
-			}
-
-			if (allTags.length > 10) {
-				tagChips.createSpan({
-					cls: 'timeline-filter-tag-more',
-					text: `+${allTags.length - 10}`,
-				});
-			}
-		}
-
-		// フィルタープリセットセクション
-		this.renderFilterPresets(filterBar);
-	}
-
 	/**
-	 * フィルタープリセットを描画
+	 * フィルターバーのコンテキストを取得
 	 */
-	private renderFilterPresets(container: HTMLElement): void {
-		const presetSection = container.createDiv({ cls: 'timeline-filter-presets' });
-
-		// 保存ボタン
-		const saveBtn = presetSection.createEl('button', {
-			cls: 'timeline-preset-save-btn',
-			text: '+ save',
-			attr: { 'aria-label': 'Save current filter as preset' },
-		});
-		saveBtn.addEventListener('click', () => {
-			void this.saveCurrentFilterAsPreset();
-		});
-
-		// 既存のプリセット
-		const presets = this.plugin.getFilterPresets();
-		for (const preset of presets) {
-			const presetChip = presetSection.createDiv({ cls: 'timeline-preset-chip' });
-			const presetName = presetChip.createSpan({
-				cls: 'timeline-preset-name',
-				text: preset.name,
-			});
-			presetName.addEventListener('click', () => {
-				this.loadFilterPreset(preset);
-			});
-			const deleteBtn = presetChip.createEl('button', {
-				cls: 'timeline-preset-delete-btn',
-				text: '×',
-				attr: { 'aria-label': `Delete preset "${preset.name}"` },
-			});
-			deleteBtn.addEventListener('click', (e) => {
-				e.stopPropagation();
-				void this.plugin.deleteFilterPreset(preset.id);
-				void this.render();
-			});
-		}
-	}
-
-	/**
-	 * 現在のフィルタをプリセットとして保存
-	 */
-	private async saveCurrentFilterAsPreset(): Promise<void> {
-		const modal = new TextInputModal(this.app, 'Save filter preset', 'Enter preset name');
-		modal.open();
-		const name = await modal.waitForResult();
-		if (!name?.trim()) return;
-
-		const preset: FilterPreset = {
-			id: `preset-${Date.now()}`,
-			name: name.trim(),
-			searchQuery: this.searchQuery,
-			fileTypeFilters: Array.from(this.fileTypeFilters),
-			selectedTags: Array.from(this.selectedTags),
-			dateFilterStart: this.dateFilterStart,
-			dateFilterEnd: this.dateFilterEnd,
+	private getFilterBarContext(): FilterBarContext {
+		return {
+			state: this.filterState,
+			cards: this.cards,
+			cachedAllTags: this.cachedAllTags,
+			listContainerEl: this.listContainerEl,
+			app: this.app,
+			plugin: this.plugin,
+			onFilterChanged: () => { void this.renderCardList(); },
+			render: () => this.render(),
 		};
-
-		await this.plugin.saveFilterPreset(preset);
-		await this.render();
-	}
-
-	/**
-	 * プリセットを読み込み
-	 */
-	private loadFilterPreset(preset: FilterPreset): void {
-		this.searchQuery = preset.searchQuery;
-		this.fileTypeFilters = new Set(preset.fileTypeFilters);
-		this.selectedTags = new Set(preset.selectedTags);
-		this.dateFilterStart = preset.dateFilterStart;
-		this.dateFilterEnd = preset.dateFilterEnd;
-		void this.render();
-	}
-
-	/**
-	 * 全カードからユニークなタグを収集
-	 */
-	private collectAllTags(): string[] {
-		const tagCounts = new Map<string, number>();
-
-		for (const card of this.cards) {
-			for (const tag of card.tags) {
-				tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-			}
-		}
-
-		// 出現回数でソートして返す
-		return Array.from(tagCounts.entries())
-			.sort((a, b) => b[1] - a[1])
-			.map(([tag]) => tag);
-	}
-
-	/**
-	 * 検索入力ハンドラー（デバウンス付き）
-	 */
-	private handleSearchInput(query: string): void {
-		if (!this.listContainerEl) {
-			return;
-		}
-		if (this.searchDebounceTimer !== null) {
-			window.clearTimeout(this.searchDebounceTimer);
-		}
-
-		this.searchDebounceTimer = window.setTimeout(() => {
-			if (!this.listContainerEl) {
-				return;
-			}
-			this.searchQuery = query;
-			void this.renderCardList();
-		}, 300);
-	}
-
-	/**
-	 * ファイルタイプフィルタをトグル
-	 */
-	private toggleFileTypeFilter(type: string): void {
-		if (this.fileTypeFilters.has(type)) {
-			// 最低1つは残す
-			if (this.fileTypeFilters.size > 1) {
-				this.fileTypeFilters.delete(type);
-			}
-		} else {
-			this.fileTypeFilters.add(type);
-		}
-		void this.renderCardList();
-	}
-
-	/**
-	 * タグフィルタをトグル
-	 */
-	private toggleTagFilter(tag: string): void {
-		if (this.selectedTags.has(tag)) {
-			this.selectedTags.delete(tag);
-		} else {
-			this.selectedTags.add(tag);
-		}
-		void this.renderCardList();
-	}
-
-	/**
-	 * フィルタを適用
-	 */
-	private applyFilters(): void {
-		this.filteredCards = this.cards.filter(card => {
-			// ファイルタイプフィルタ
-			if (!this.fileTypeFilters.has(card.fileType)) {
-				return false;
-			}
-
-			// タグフィルタ（選択タグがある場合、いずれかを含む）
-			if (this.selectedTags.size > 0) {
-				const hasMatchingTag = card.tags.some(tag => this.selectedTags.has(tag));
-				if (!hasMatchingTag) {
-					return false;
-				}
-			}
-
-			// 検索クエリフィルタ
-			if (this.searchQuery.trim()) {
-				const query = this.searchQuery.toLowerCase();
-				const titleMatch = card.title.toLowerCase().includes(query);
-				const previewMatch = card.preview.toLowerCase().includes(query);
-				const tagMatch = card.tags.some(tag => tag.toLowerCase().includes(query));
-				if (!titleMatch && !previewMatch && !tagMatch) {
-					return false;
-				}
-			}
-
-			// 日付範囲フィルタ
-			if (this.dateFilterStart || this.dateFilterEnd) {
-				const cardDate = card.createdAt;
-				if (cardDate === null) {
-					return false;  // 日付不明のカードは除外
-				}
-				if (this.dateFilterStart) {
-					const startTimestamp = new Date(this.dateFilterStart).getTime();
-					if (cardDate < startTimestamp) {
-						return false;
-					}
-				}
-				if (this.dateFilterEnd) {
-					// 終了日は23:59:59まで含める
-					const endTimestamp = new Date(this.dateFilterEnd).getTime() + 24 * 60 * 60 * 1000 - 1;
-					if (cardDate > endTimestamp) {
-						return false;
-					}
-				}
-			}
-
-			return true;
-		});
 	}
 
 	/**
@@ -905,7 +586,7 @@ export class TimelineView extends ItemView {
 			return;
 		}
 		// フィルタを適用
-		this.applyFilters();
+		this.filteredCards = applyFilters(this.cards, this.filterState);
 
 		// カード数表示を更新
 		const countEl = this.listContainerEl.querySelector('.timeline-count');
@@ -917,7 +598,7 @@ export class TimelineView extends ItemView {
 		}
 
 		// フィルタバーのUI状態を更新
-		this.updateFilterBarUI();
+		updateFilterBarUI(this.listContainerEl, this.filterState);
 
 		// カードリスト/グリッドを再描画
 		const settings = this.plugin.data.settings;
@@ -944,27 +625,6 @@ export class TimelineView extends ItemView {
 
 		// フッターを更新
 		this.updateFooter();
-	}
-
-	/**
-	 * フィルタバーのUI状態を更新
-	 */
-	private updateFilterBarUI(): void {
-		// ファイルタイプボタンの状態更新
-		const typeButtons = this.listContainerEl.querySelectorAll('.timeline-filter-type-btn');
-		typeButtons.forEach(btn => {
-			const type = btn.getAttribute('data-type');
-			if (type) {
-				btn.classList.toggle('is-active', this.fileTypeFilters.has(type));
-			}
-		});
-
-		// タグチップの状態更新
-		const tagChips = this.listContainerEl.querySelectorAll('.timeline-filter-tag-chip');
-		tagChips.forEach(chip => {
-			const tag = chip.textContent || '';
-			chip.classList.toggle('is-selected', this.selectedTags.has(tag));
-		});
 	}
 
 	/**
