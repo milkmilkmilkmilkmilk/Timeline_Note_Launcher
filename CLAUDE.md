@@ -70,16 +70,19 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 
 ## Key Development Notes
 
-- External packages (`obsidian`, `electron`, CodeMirror) are provided by Obsidian at runtime and marked as externals in esbuild config
-- Use `this.register*` methods for cleanup-safe event listeners
-- Add commands with stable IDs (don't rename after release)
-- `Platform.isMobile` for mobile-specific behavior; `mobileViewOnDesktop` setting enables mobile layout on desktop for testing
-- TypeScript strict mode: `noImplicitAny`, `strictNullChecks`, `noUncheckedIndexedAccess` all enabled
-- When adding new settings: update `PluginSettings` interface, `DEFAULT_SETTINGS`, and settings UI in `settings.ts`
 - PDF files are displayed using interactive `<embed>` elements with an "Open" button overlay
-- Source comments are in Japanese; maintain this convention
-- This is a TypeScript-only codebase; do not create JavaScript files
-- ESLint uses `eslint-plugin-obsidianmd` with rules for settings headings, sentence case, and no static styles assignment
-- ESLint disable comments require descriptions (`@eslint-community/eslint-comments/require-description`); use format: `// eslint-disable-next-line rule-name -- reason`
 - Modal patterns: all modals accept a `plugin` reference (typed as `import type` from `main`), store drafts in plugin data, and support keyboard shortcuts (Ctrl+Enter to confirm)
 - Link generation uses `app.fileManager.generateMarkdownLink()` to respect the user's wikilink vs markdown link preference
+- `mobileViewOnDesktop` setting enables mobile layout on desktop for testing
+
+TypeScript・Obsidian API・コーディングスタイル・ESLintの詳細ルールは `.claude/rules/typescript-obsidian.md` を参照。
+Gitワークフローのルールは `.claude/rules/git-workflow.md` を参照。
+
+## Custom Commands
+
+プロジェクト固有のClaude Codeコマンド（`.claude/commands/`）:
+
+- `/review` — staged changesのコードレビュー（型安全性、リソースリーク、モバイル互換性など）
+- `/obsidian-setting <設定の説明>` — 新しい設定項目を3ファイル整合的に追加
+- `/pre-release` — リリース前のlint・build・バージョン整合性チェック
+- `/debug-view <問題の説明>` — TimelineViewのデータフロー追跡によるデバッグ
