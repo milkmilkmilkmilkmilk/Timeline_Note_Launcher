@@ -9,15 +9,23 @@
   - 随机: 纯随机选择
   - 时间优先: 较旧的笔记更频繁出现
   - SRS（间隔重复系统）: 使用SM-2算法实现最佳复习间隔
-- **SRS支持**: 使用Again/Hard/Good/Easy按钮评价卡片，自动安排下次复习
+- **SRS支持**: 使用Again/Hard/Good/Easy按钮评价卡片，自动安排下次复习。支持撤销评价
 - **引用笔记**: 从当前笔记创建包含引用文本的新笔记
+- **链接笔记**: 在笔记之间添加链接
 - **评论功能**: 直接向笔记添加带时间戳的Callout评论
-- **过滤栏**: 按文本搜索，按文件类型和标签过滤
+- **快速笔记**: 直接从时间线创建新笔记
+- **过滤栏**: 按文本搜索，按文件类型、标签和日期范围过滤。支持保存和加载过滤预设
 - **网格/列表切换**: 切换卡片布局
-- **多文件支持**: Markdown、图片、PDF、音频、视频
-- **统计仪表板**: 活动热力图和复习统计
+- **多文件支持**: Markdown、文本、图片、PDF、音频、视频、Excalidraw、Canvas、Jupyter Notebook、Office文件
+- **书签集成**: 通过核心书签插件切换卡片的书签状态
+- **YAML集成**: 从frontmatter属性读取难度、优先级和日期
+- **统计仪表板**: 活动热力图、复习统计和文件类型分布
 - **键盘快捷键**: 使用热键高效导航
-- **颜色主题**: 多种主题选项
+- **颜色主题**: 多种强调色和UI主题（经典 / Twitter风格）
+- **无限滚动**: 滚动加载更多卡片
+- **下拉刷新**: 在移动端下拉刷新
+- **分屏视图**: 在桌面端以分屏方式打开笔记
+- **Frontmatter属性**: 在卡片上显示选定的frontmatter属性
 
 ## 安装
 
@@ -70,15 +78,26 @@
 | 设置项 | 说明 |
 |-------|------|
 | Target Folders | 要包含在时间线中的文件夹（空 = 全部） |
+| Exclude Folders | 从时间线中排除的文件夹 |
 | Target Tags | 按标签过滤笔记 |
 | Selection Mode | 随机 / 时间优先 / SRS |
-| Preview Lines | 每张卡片的预览行数 |
+| View Mode | 列表或网格布局 |
+| Media Size | 图片和嵌入的最大高度 |
+| Preview Mode | 固定行数 / 一半 / 全文预览 |
+| Color Theme | 时间线的强调色 |
+| UI Theme | 经典或Twitter风格布局 |
+| Show Properties | 在卡片上显示frontmatter属性 |
+| Max Cards | 时间线的最大卡片数 |
+| Infinite Scroll | 滚动加载更多卡片 |
 | Auto Refresh | 时间线自动刷新间隔 |
+| YAML Keys | 从frontmatter读取难度、优先级和日期 |
+| Quick Note Folder | 快速笔记的保存文件夹 |
 | New Cards per Day | SRS模式下每天的新卡片上限 |
-| Daily Review Limit | SRS模式下每天的复习上限 |
+| Review Cards per Day | SRS模式下每天的复习上限 |
 | Initial Interval | 首次复习间隔（天数） |
 | Easy Bonus | Easy评价的倍率 |
-| Theme | 时间线视图的颜色主题 |
+
+完整设置请查看插件设置选项卡。
 
 ## 键盘快捷键
 
@@ -87,13 +106,18 @@
 | `j` / `ArrowDown` | 下一张卡片 |
 | `k` / `ArrowUp` | 上一张卡片 |
 | `Enter` / `o` | 打开选中的笔记 |
+| `1` - `4` | 评价卡片（Again/Hard/Good/Easy） |
+| `u` | 撤销上次评价 |
+| `b` | 切换书签 |
+| `c` | 打开评论窗口 |
+| `q` | 打开引用笔记窗口 |
+| `l` | 打开链接笔记窗口 |
 | `r` | 刷新时间线 |
-| `g` | 切换网格/列表视图 |
-| `1-4` | 评价卡片（SRS模式） |
+| `Escape` | 取消焦点 |
 
 ## 系统要求
 
-- Obsidian v0.15.0 或更高版本
+- Obsidian v1.0.0 或更高版本
 
 ## 已知限制
 
