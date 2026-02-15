@@ -11,15 +11,23 @@ A Twitter-like timeline view for randomly reviewing your notes in Obsidian. Disp
   - Random: Pure random selection
   - Age Priority: Older notes appear more frequently
   - SRS (Spaced Repetition System): Uses SM-2 algorithm for optimal review intervals
-- **SRS Support**: Rate cards with Again/Hard/Good/Easy buttons, automatically schedules next review
+- **SRS Support**: Rate cards with Again/Hard/Good/Easy buttons, automatically schedules next review. Undo button to revert ratings
 - **Quote Note**: Create new notes with quoted text from the current note
+- **Link Note**: Add links from one note to others
 - **Comment Feature**: Add timestamped callout comments directly to notes
-- **Filter Bar**: Search by text, filter by file type and tags
+- **Quick Note**: Compose and create new notes directly from the timeline
+- **Filter Bar**: Search by text, filter by file type, tags, and date range. Save and load filter presets
 - **Grid/List View Toggle**: Switch between card layouts
-- **Multi-file Support**: Markdown, Images, PDF, Audio, Video
-- **Statistics Dashboard**: Activity heatmap and review statistics
+- **Multi-file Support**: Markdown, Text, Images, PDF, Audio, Video, Excalidraw, Canvas, Jupyter Notebook, Office files
+- **Bookmark Integration**: Toggle bookmarks on cards via the core Bookmarks plugin
+- **YAML Integration**: Read difficulty, priority, and date from frontmatter properties
+- **Statistics Dashboard**: Activity heatmap, review statistics, and file type breakdown
 - **Keyboard Shortcuts**: Navigate efficiently with hotkeys
-- **Color Themes**: Multiple theme options
+- **Color Themes**: Multiple accent colors and UI themes (Classic / Twitter-like)
+- **Infinite Scroll**: Load more cards as you scroll
+- **Pull to Refresh**: Swipe down to refresh on mobile
+- **Split View**: Open notes in a split pane (desktop)
+- **Frontmatter Properties**: Display selected frontmatter properties on cards
 
 ## Installation
 
@@ -72,15 +80,26 @@ A Twitter-like timeline view for randomly reviewing your notes in Obsidian. Disp
 | Setting | Description |
 |---------|-------------|
 | Target Folders | Folders to include in the timeline (empty = all) |
+| Exclude Folders | Folders to exclude from the timeline |
 | Target Tags | Filter notes by tags |
 | Selection Mode | Random / Age Priority / SRS |
-| Preview Lines | Number of preview lines per card |
+| View Mode | List or Grid layout |
+| Media Size | Maximum height for images and embeds |
+| Preview Mode | Fixed lines / Half / Full note preview |
+| Color Theme | Accent color for the timeline |
+| UI Theme | Classic or Twitter-like layout |
+| Show Properties | Display frontmatter properties on cards |
+| Max Cards | Maximum number of cards in the timeline |
+| Infinite Scroll | Load more cards on scroll |
 | Auto Refresh | Interval for automatic timeline refresh |
+| YAML Keys | Read difficulty, priority, and date from frontmatter |
+| Quick Note Folder | Folder to save quick notes |
 | New Cards per Day | Maximum new cards in SRS mode |
-| Daily Review Limit | Maximum reviews per day in SRS mode |
+| Review Cards per Day | Maximum reviews per day in SRS mode |
 | Initial Interval | First review interval in days |
 | Easy Bonus | Multiplier for Easy rating |
-| Theme | Color theme for the timeline view |
+
+See the plugin settings tab for the full list of options.
 
 ## Keyboard Shortcuts
 
@@ -89,13 +108,18 @@ A Twitter-like timeline view for randomly reviewing your notes in Obsidian. Disp
 | `j` / `ArrowDown` | Next card |
 | `k` / `ArrowUp` | Previous card |
 | `Enter` / `o` | Open selected note |
+| `1` - `4` | Rate card (Again/Hard/Good/Easy) |
+| `u` | Undo last rating |
+| `b` | Toggle bookmark |
+| `c` | Open comment modal |
+| `q` | Open quote note modal |
+| `l` | Open link note modal |
 | `r` | Refresh timeline |
-| `g` | Toggle grid/list view |
-| `1-4` | Rate card (SRS mode) |
+| `Escape` | Clear focus |
 
 ## Requirements
 
-- Obsidian v0.15.0 or later
+- Obsidian v1.0.0 or later
 
 ## Known Limitations
 
