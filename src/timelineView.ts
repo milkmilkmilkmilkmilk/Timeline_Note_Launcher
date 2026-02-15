@@ -128,7 +128,10 @@ export class TimelineView extends ItemView {
 		}
 
 		// 最新データはバックグラウンドで更新
-		void this.refresh();
+		void this.refresh().catch((error: unknown) => {
+			console.error('Failed to refresh timeline:', error);
+			this.renderErrorState();
+		});
 	}
 
 	private renderLoadingState(): void {
@@ -136,6 +139,14 @@ export class TimelineView extends ItemView {
 		const loading = this.listContainerEl.createDiv({ cls: 'timeline-loading-indicator' });
 		loading.createSpan({ cls: 'timeline-loading-spinner' });
 		loading.createSpan({ cls: 'timeline-loading-text', text: 'Loading timeline...' });
+	}
+
+	private renderErrorState(): void {
+		// すでに通常UIが描画されている場合は上書きしない
+		if (this.listContainerEl.querySelector('.timeline-header')) return;
+		this.listContainerEl.empty();
+		const loading = this.listContainerEl.createDiv({ cls: 'timeline-loading-indicator' });
+		loading.createSpan({ cls: 'timeline-loading-text', text: 'Failed to load timeline. Tap refresh to retry.' });
 	}
 
 	/**
@@ -315,9 +326,10 @@ export class TimelineView extends ItemView {
 		const newStateKeys = this.cards.map(card => buildCardStateKey(card));
 		const pathsChanged = !arraysEqual(this.lastCardPaths, newPaths);
 		const stateChanged = !arraysEqual(this.lastCardStateKeys, newStateKeys);
+		const hasRenderedTimeline = this.listContainerEl.querySelector('.timeline-header') !== null;
 
 		// パスやカード内容が変わっていない場合は完全再構築をスキップ（ヘッダーの統計のみ更新）
-		if (!pathsChanged && !stateChanged && this.listContainerEl.hasChildNodes()) {
+		if (!pathsChanged && !stateChanged && hasRenderedTimeline) {
 			// 統計のみ更新
 			const statsEl = this.listContainerEl.querySelector('.timeline-stats');
 			if (statsEl && this.plugin.data.settings.selectionMode === 'srs') {
