@@ -3,6 +3,13 @@
 import { App, TFile, normalizePath } from 'obsidian';
 import type { FileType } from './types';
 
+/** 画像拡張子 */
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'avif'];
+
+function isImageFile(file: TFile): boolean {
+	return IMAGE_EXTENSIONS.includes(file.extension.toLowerCase());
+}
+
 /**
  * コンパニオンノートのパスを取得
  */
@@ -16,10 +23,115 @@ export function getCompanionNotePath(file: TFile): string {
 export async function getOrCreateCompanionNote(app: App, file: TFile): Promise<TFile> {
 	const companionPath = getCompanionNotePath(file);
 	const existing = app.vault.getAbstractFileByPath(companionPath);
-	if (existing && existing instanceof TFile) return existing;
-	const link = app.fileManager.generateMarkdownLink(file, file.parent?.path ?? '');
-	const content = `---\ncompanion_of: "${file.name}"\n---\n\n元ファイル: ${link}\n`;
+	if (existing && existing instanceof TFile) {
+		await ensureCompanionImageEmbed(app, existing, file);
+		return existing;
+	}
+	const content = buildCompanionHeader(app, file, companionPath);
 	return await app.vault.create(companionPath, content);
+}
+
+/**
+ * コンパニオンノート先頭の固定コンテンツを構築
+ */
+function buildCompanionHeader(app: App, file: TFile, companionPath: string): string {
+	const sourceLink = app.fileManager.generateMarkdownLink(file, companionPath);
+	const lines = [
+		'---',
+		`companion_of: "${file.name}"`,
+		'---',
+		'',
+		`元ファイル: ${sourceLink}`,
+	];
+
+	// 画像ファイルは元画像をそのまま表示
+	if (isImageFile(file)) {
+		lines.push(`!${sourceLink}`);
+	}
+
+	return `${lines.join('\n')}\n`;
+}
+
+/**
+ * 既存コンパニオンノートに元画像埋め込みがなければ追記
+ */
+async function ensureCompanionImageEmbed(app: App, companionNote: TFile, sourceFile: TFile): Promise<void> {
+	if (!isImageFile(sourceFile)) return;
+
+	const sourcePath = normalizePath(sourceFile.path);
+	const content = await app.vault.cachedRead(companionNote);
+	const embeddedTargets = collectEmbeddedTargets(app, content, companionNote.path);
+	if (embeddedTargets.has(sourcePath)) return;
+
+	const sourceLink = app.fileManager.generateMarkdownLink(sourceFile, companionNote.path);
+	const embedLine = `!${sourceLink}`;
+	const lines = content.split('\n');
+	const sourceLineIndex = lines.findIndex(line => line.trimStart().startsWith('元ファイル:'));
+
+	let nextContent: string;
+	if (sourceLineIndex !== -1) {
+		lines.splice(sourceLineIndex + 1, 0, embedLine);
+		nextContent = lines.join('\n');
+	} else {
+		const trimmed = content.trimEnd();
+		nextContent = `${trimmed}\n\n元ファイル: ${sourceLink}\n${embedLine}\n`;
+	}
+
+	if (nextContent !== content) {
+		await app.vault.modify(companionNote, nextContent);
+	}
+}
+
+/**
+ * 画像埋め込みのリンク先を解決して収集
+ */
+function collectEmbeddedTargets(app: App, content: string, sourcePath: string): Set<string> {
+	const targets = new Set<string>();
+
+	// ![[image.png]] / ![[path/to/image.png|alt]]
+	const wikiEmbedRe = /!\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]*)?\]\]/g;
+	let wikiMatch: RegExpExecArray | null;
+	while ((wikiMatch = wikiEmbedRe.exec(content)) !== null) {
+		const rawTarget = wikiMatch[1]?.trim();
+		if (!rawTarget) continue;
+		const resolved = app.metadataCache.getFirstLinkpathDest(rawTarget, sourcePath);
+		if (resolved) {
+			targets.add(normalizePath(resolved.path));
+		} else {
+			targets.add(normalizePath(rawTarget));
+		}
+	}
+
+	// ![alt](path/to/image.png)
+	const mdEmbedRe = /!\[[^\]]*]\(([^)]+)\)/g;
+	let mdMatch: RegExpExecArray | null;
+	while ((mdMatch = mdEmbedRe.exec(content)) !== null) {
+		let rawTarget = mdMatch[1]?.trim();
+		if (!rawTarget) continue;
+
+		// <path with spaces> 形式を優先し、それ以外はタイトル部を除去
+		if (rawTarget.startsWith('<') && rawTarget.endsWith('>')) {
+			rawTarget = rawTarget.slice(1, -1).trim();
+		} else {
+			const whitespaceIndex = rawTarget.search(/\s/);
+			if (whitespaceIndex !== -1) {
+				rawTarget = rawTarget.slice(0, whitespaceIndex).trim();
+			}
+		}
+		if (!rawTarget) continue;
+		if (rawTarget.startsWith('http://') || rawTarget.startsWith('https://') || rawTarget.startsWith('data:')) {
+			continue;
+		}
+
+		const resolved = app.metadataCache.getFirstLinkpathDest(rawTarget, sourcePath);
+		if (resolved) {
+			targets.add(normalizePath(resolved.path));
+		} else {
+			targets.add(normalizePath(rawTarget));
+		}
+	}
+
+	return targets;
 }
 
 /**
