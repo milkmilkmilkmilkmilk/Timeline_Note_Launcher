@@ -32,13 +32,13 @@ export function selectCards(
 	switch (mode) {
 		case 'random':
 			return {
-				selectedPaths: selectRandom(cards).slice(0, maxCards).map(c => c.path),
+				selectedPaths: selectRandom(cards, maxCards).map(c => c.path),
 				newCount, dueCount,
 			};
 
 		case 'age-priority':
 			return {
-				selectedPaths: selectAgePriority(cards).slice(0, maxCards).map(c => c.path),
+				selectedPaths: selectAgePriority(cards, maxCards).map(c => c.path),
 				newCount, dueCount,
 			};
 
@@ -47,7 +47,7 @@ export function selectCards(
 
 		default:
 			return {
-				selectedPaths: selectRandom(cards).slice(0, maxCards).map(c => c.path),
+				selectedPaths: selectRandom(cards, maxCards).map(c => c.path),
 				newCount, dueCount,
 			};
 	}
@@ -57,17 +57,9 @@ export function selectCards(
  * モードA: 単純ランダム（公平性を向上した重み付けランダム）
  * lastSelectedAtが古いほど選ばれやすくなる
  */
-function selectRandom(cards: CandidateCard[]): CandidateCard[] {
+function selectRandom(cards: CandidateCard[], maxCards: number): CandidateCard[] {
 	const now = Date.now();
-
-	// 重み付けカード配列を作成
-	const weighted = cards.map(card => ({
-		card,
-		weight: calculateRandomWeight(card, now),
-	}));
-
-	// 重み付けシャッフル
-	return weightedShuffle(weighted).map(w => w.card);
+	return weightedSampleTopK(cards, maxCards, card => calculateRandomWeight(card, now));
 }
 
 /**
@@ -97,17 +89,9 @@ function calculateRandomWeight(card: CandidateCard, now: number): number {
  * モードB: 古い優先ランダム
  * lastReviewedAt が古いほど重み大、pinned に加点
  */
-function selectAgePriority(cards: CandidateCard[]): CandidateCard[] {
+function selectAgePriority(cards: CandidateCard[], maxCards: number): CandidateCard[] {
 	const now = Date.now();
-
-	// 重み付きカード配列を作成
-	const weighted = cards.map(card => ({
-		card,
-		weight: calculateAgeWeight(card, now),
-	}));
-
-	// 重み付きランダム選択
-	return weightedShuffle(weighted).map(w => w.card);
+	return weightedSampleTopK(cards, maxCards, card => calculateAgeWeight(card, now));
 }
 
 /**
@@ -262,19 +246,75 @@ function calculateAgeWeight(card: CandidateCard, now: number): number {
 	return weight;
 }
 
+interface WeightedCandidate {
+	card: CandidateCard;
+	sortKey: number;
+}
+
 /**
- * 重み付きシャッフル（O(n log n)）
- * Exponential sortingアルゴリズム: 各アイテムに random^(1/weight) でソートキーを割り当て、
- * ソートすることで重み付きランダム選択を実現
+ * 重み付きランダム抽出（上位k件のみ）
+ * Exponential sorting のキーを使い、min-heap で top-k を維持して O(n log k) で抽出
  */
-function weightedShuffle<T>(items: { card: T; weight: number }[]): { card: T; weight: number }[] {
-	// 各アイテムにソートキーを付与してソート
-	return items
-		.map(item => ({
-			item,
-			// 重みが大きいほど、この値が大きくなりやすい
-			sortKey: Math.pow(Math.random(), 1 / Math.max(item.weight, 0.001)),
-		}))
-		.sort((a, b) => b.sortKey - a.sortKey)
-		.map(x => x.item);
+function weightedSampleTopK(
+	cards: CandidateCard[],
+	maxCards: number,
+	weightOf: (card: CandidateCard) => number
+): CandidateCard[] {
+	const limit = Math.min(maxCards, cards.length);
+	if (limit <= 0) return [];
+
+	const heap: WeightedCandidate[] = [];
+	for (const card of cards) {
+		const weight = Math.max(weightOf(card), 0.001);
+		const sortKey = Math.pow(Math.random(), 1 / weight);
+		const candidate: WeightedCandidate = { card, sortKey };
+
+		if (heap.length < limit) {
+			heapPush(heap, candidate);
+			continue;
+		}
+
+		const minTop = heap[0];
+		if (minTop && sortKey > minTop.sortKey) {
+			heap[0] = candidate;
+			heapifyDown(heap, 0);
+		}
+	}
+
+	heap.sort((a, b) => b.sortKey - a.sortKey);
+	return heap.map(x => x.card);
+}
+
+function heapPush(heap: WeightedCandidate[], value: WeightedCandidate): void {
+	heap.push(value);
+	let idx = heap.length - 1;
+	while (idx > 0) {
+		const parent = Math.floor((idx - 1) / 2);
+		if (heap[parent] && heap[parent].sortKey <= value.sortKey) break;
+		const parentVal = heap[parent]!;
+		heap[idx] = parentVal;
+		idx = parent;
+	}
+	heap[idx] = value;
+}
+
+function heapifyDown(heap: WeightedCandidate[], startIndex: number): void {
+	let idx = startIndex;
+	const length = heap.length;
+	const root = heap[idx]!;
+
+	while (true) {
+		const left = idx * 2 + 1;
+		const right = left + 1;
+		if (left >= length) break;
+
+		let smaller = left;
+		if (right < length && heap[right]!.sortKey < heap[left]!.sortKey) {
+			smaller = right;
+		}
+		if (heap[smaller]!.sortKey >= root.sortKey) break;
+		heap[idx] = heap[smaller]!;
+		idx = smaller;
+	}
+	heap[idx] = root;
 }

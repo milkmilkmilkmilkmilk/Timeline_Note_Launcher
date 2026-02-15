@@ -408,6 +408,65 @@ export function extractBacklinks(
 // re-export: コンテンツプレビュー関数
 export { extractFirstImage, getPreviewText } from './contentPreview';
 
+interface CandidateStaticCacheEntry {
+	fileType: FileType;
+	extension: string;
+	pinned: boolean;
+	yamlPriority: number | null;
+	createdAt: number | null;
+}
+
+const CANDIDATE_STATIC_CACHE_MAX = 8000;
+const candidateStaticCache = new Map<string, CandidateStaticCacheEntry>();
+
+function getCandidateStaticCacheKey(file: TFile, settings: PluginSettings): string {
+	const yamlPriorityKey = settings.yamlPriorityKey ?? '';
+	const yamlDateField = settings.yamlDateField ?? '';
+	return `${file.path}|${file.stat.mtime}|${yamlPriorityKey}|${yamlDateField}`;
+}
+
+function getCandidateStatic(
+	app: App,
+	file: TFile,
+	settings: PluginSettings
+): CandidateStaticCacheEntry {
+	const cacheKey = getCandidateStaticCacheKey(file, settings);
+	const cached = candidateStaticCache.get(cacheKey);
+	if (cached) {
+		return cached;
+	}
+
+	const fileType = getFileTypeFromFile(file);
+	let pinned = false;
+	let yamlPriority: number | null = null;
+	let createdAt: number | null = file.stat.ctime;
+
+	if (fileType === 'markdown' || fileType === 'excalidraw') {
+		const fileCache = app.metadataCache.getFileCache(file);
+		pinned = isPinned(fileCache);
+		yamlPriority = getYamlNumber(fileCache, settings.yamlPriorityKey);
+		createdAt = extractNoteDate(fileCache, file, settings.yamlDateField);
+	}
+
+	const entry: CandidateStaticCacheEntry = {
+		fileType,
+		extension: file.extension,
+		pinned,
+		yamlPriority,
+		createdAt,
+	};
+	candidateStaticCache.set(cacheKey, entry);
+
+	if (candidateStaticCache.size > CANDIDATE_STATIC_CACHE_MAX) {
+		const oldestKey = candidateStaticCache.keys().next().value as string | undefined;
+		if (oldestKey) {
+			candidateStaticCache.delete(oldestKey);
+		}
+	}
+
+	return entry;
+}
+
 /**
  * TFileから軽量なCandidateCardを生成（同期・ファイルI/Oなし）
  * 選択フェーズで使用し、選択後にcreateTimelineCardでフルカード化する
@@ -420,30 +479,20 @@ export function createCandidateCard(
 ): CandidateCard {
 	const log = reviewLog ?? DEFAULT_REVIEW_LOG;
 	const now = Date.now();
-	const fileType = getFileTypeFromFile(file);
-
-	let pinned = false;
-	let yamlPriority: number | null = null;
-	let createdAt: number | null = file.stat.ctime;
-	if (fileType === 'markdown' || fileType === 'excalidraw') {
-		const cache = app.metadataCache.getFileCache(file);
-		pinned = isPinned(cache);
-		yamlPriority = getYamlNumber(cache, settings.yamlPriorityKey);
-		createdAt = extractNoteDate(cache, file, settings.yamlDateField);
-	}
+	const staticEntry = getCandidateStatic(app, file, settings);
 
 	return {
 		path: file.path,
-		fileType,
-		extension: file.extension,
+		fileType: staticEntry.fileType,
+		extension: staticEntry.extension,
 		lastReviewedAt: log.lastReviewedAt,
 		reviewCount: log.reviewCount,
 		nextReviewAt: log.nextReviewAt,
 		isNew: log.reviewCount === 0,
 		isDue: log.nextReviewAt !== null && log.nextReviewAt <= now,
-		pinned,
-		yamlPriority,
-		createdAt,
+		pinned: staticEntry.pinned,
+		yamlPriority: staticEntry.yamlPriority,
+		createdAt: staticEntry.createdAt,
 		lastSelectedAt: log.lastSelectedAt ?? null,
 	};
 }

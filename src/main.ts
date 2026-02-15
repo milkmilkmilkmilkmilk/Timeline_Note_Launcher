@@ -1,5 +1,5 @@
 // Timeline Note Launcher - Main Plugin
-import { Plugin } from 'obsidian';
+import { Plugin, TFile } from 'obsidian';
 import { PluginData, DEFAULT_DATA, DifficultyRating, TimelineCard, getTodayString, QuoteNoteDraft, RatingUndoSnapshot, FilterPreset } from './types';
 import { TimelineView, TIMELINE_VIEW_TYPE } from './timelineView';
 import { TimelineSettingTab } from './settings';
@@ -24,8 +24,13 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	private autoRefreshInterval: number | null = null;
 	private backlinkIndexCache: { index: BacklinkIndex; timestamp: number } | null = null;
 	private static readonly BACKLINK_CACHE_TTL = 300_000;
+	private targetFilesCache: { files: TFile[]; settingsKey: string; timestamp: number } | null = null;
+	private static readonly TARGET_FILES_CACHE_TTL = 30_000;
 	private timelineCardsCache: { cards: TimelineCard[]; newCount: number; dueCount: number; timestamp: number } | null = null;
 	private static readonly TIMELINE_CACHE_TTL = 15_000;
+	private lastReloadFromDiskAt: number = 0;
+	private static readonly RELOAD_FROM_DISK_DEBOUNCE_MS = 1_500;
+	private static readonly CREATE_CARD_CONCURRENCY = 8;
 	// 評価取り消し用スナップショット（セッション限り）
 	private ratingUndoMap: Map<string, RatingUndoSnapshot> = new Map();
 	// 保存キュー（直列化用）
@@ -66,10 +71,21 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		// 設定タブ
 		this.addSettingTab(new TimelineSettingTab(this.app, this));
 
+		// ファイル変更時に重い派生キャッシュを無効化
+		const invalidateDerivedCaches = (): void => {
+			this.backlinkIndexCache = null;
+			this.invalidateTargetFilesCache();
+			this.invalidateTimelineCache();
+		};
+		this.registerEvent(this.app.vault.on('create', invalidateDerivedCaches));
+		this.registerEvent(this.app.vault.on('delete', invalidateDerivedCaches));
+		this.registerEvent(this.app.vault.on('rename', invalidateDerivedCaches));
+		this.registerEvent(this.app.vault.on('modify', invalidateDerivedCaches));
+
 		// visibilitychange リスナー（アプリ復帰時にリモート変更を取り込む）
 		this.registerDomEvent(document, 'visibilitychange', () => {
 			if (document.visibilityState === 'visible') {
-				void this.reloadFromDisk();
+				void this.reloadFromDisk(true);
 			}
 		});
 
@@ -220,7 +236,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		// リフレッシュ時に最新データを取り込む
 		await this.reloadFromDisk();
 
-		const targetFiles = enumerateTargetNotes(this.app, this.data.settings);
+		const targetFiles = this.getTargetFiles();
 
 		// Phase 1: 軽量候補生成（ファイルI/Oなし・同期）
 		const candidates = targetFiles.map(file =>
@@ -241,8 +257,10 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		const fileMap = new Map(targetFiles.map(f => [f.path, f]));
 		const backlinkIndex = this.getBacklinkIndex();
 
-		const cards = await Promise.all(
-			result.selectedPaths.map(path =>
+		const cards = await this.mapWithConcurrency(
+			result.selectedPaths,
+			TimelineNoteLauncherPlugin.CREATE_CARD_CONCURRENCY,
+			async (path) =>
 				createTimelineCard(
 					this.app,
 					fileMap.get(path)!,
@@ -250,7 +268,6 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 					this.data.settings,
 					backlinkIndex
 				)
-			)
 		);
 
 		// 選択されたカードのlastSelectedAtを更新（公平ランダム用）
@@ -279,6 +296,63 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			timestamp: Date.now(),
 		};
 		return timelineResult;
+	}
+
+	private getTargetFiles(): TFile[] {
+		const settingsKey = this.buildTargetFilesCacheKey();
+		const now = Date.now();
+		if (
+			this.targetFilesCache &&
+			this.targetFilesCache.settingsKey === settingsKey &&
+			now - this.targetFilesCache.timestamp < TimelineNoteLauncherPlugin.TARGET_FILES_CACHE_TTL
+		) {
+			return this.targetFilesCache.files;
+		}
+
+		const files = enumerateTargetNotes(this.app, this.data.settings);
+		this.targetFilesCache = {
+			files,
+			settingsKey,
+			timestamp: now,
+		};
+		return files;
+	}
+
+	private buildTargetFilesCacheKey(): string {
+		const { targetFolders, excludeFolders, targetTags } = this.data.settings;
+		return [
+			[...targetFolders].sort().join('|'),
+			[...excludeFolders].sort().join('|'),
+			[...targetTags].sort().join('|'),
+		].join('::');
+	}
+
+	private invalidateTargetFilesCache(): void {
+		this.targetFilesCache = null;
+	}
+
+	private async mapWithConcurrency<T, R>(
+		items: readonly T[],
+		concurrency: number,
+		mapper: (item: T) => Promise<R>
+	): Promise<R[]> {
+		if (items.length === 0) return [];
+
+		const results = new Array<R>(items.length);
+		let nextIndex = 0;
+		const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+
+		const worker = async (): Promise<void> => {
+			while (true) {
+				const current = nextIndex;
+				nextIndex++;
+				if (current >= items.length) break;
+				results[current] = await mapper(items[current]!);
+			}
+		};
+
+		await Promise.all(Array.from({ length: workerCount }, () => worker()));
+		return results;
 	}
 
 	/**
@@ -437,6 +511,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 */
 	refreshAllViews(): void {
 		this.backlinkIndexCache = null;
+		this.invalidateTargetFilesCache();
 		this.invalidateTimelineCache();
 		this.ratingUndoMap.clear();
 		const leaves = this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE);
@@ -595,12 +670,19 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * ディスクからリロードしてマージ（保存なし・読み取り専用）
 	 * アプリ復帰時やタイムラインリフレッシュ時に使用
 	 */
-	private async reloadFromDisk(): Promise<void> {
+	private async reloadFromDisk(force: boolean = false): Promise<void> {
+		const now = Date.now();
+		if (!force && now - this.lastReloadFromDiskAt < TimelineNoteLauncherPlugin.RELOAD_FROM_DISK_DEBOUNCE_MS) {
+			return;
+		}
+		this.lastReloadFromDiskAt = now;
+
 		this.saveQueue = this.saveQueue.then(async () => {
 			try {
 				const diskRaw = await this.loadData() as Partial<PluginData> | null;
 				const remote = reconstructFullData(diskRaw);
 				this.data = mergePluginData(this.data, remote);
+				this.lastReloadFromDiskAt = Date.now();
 			} catch {
 				// loadData失敗時はローカルをそのまま維持
 			}
