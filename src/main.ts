@@ -27,10 +27,12 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	private targetFilesCache: { files: TFile[]; settingsKey: string; timestamp: number } | null = null;
 	private static readonly TARGET_FILES_CACHE_TTL = 30_000;
 	private timelineCardsCache: { cards: TimelineCard[]; newCount: number; dueCount: number; timestamp: number } | null = null;
-	private static readonly TIMELINE_CACHE_TTL = 15_000;
+	private static readonly TIMELINE_CACHE_TTL = 300_000;
 	private lastReloadFromDiskAt: number = 0;
 	private static readonly RELOAD_FROM_DISK_DEBOUNCE_MS = 1_500;
-	private static readonly CREATE_CARD_CONCURRENCY = 8;
+	private static readonly CREATE_CARD_CONCURRENCY = 16;
+	private saveQueueDepth: number = 0;
+	private reloadAfterQueueScheduled: boolean = false;
 	// 評価取り消し用スナップショット（セッション限り）
 	private ratingUndoMap: Map<string, RatingUndoSnapshot> = new Map();
 	// 保存キュー（直列化用）
@@ -94,19 +96,35 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			// 自動更新の設定
 			this.setupAutoRefresh();
 
+			let dataChanged = false;
+
 			// 古いログのクリーンアップ
-			this.data.reviewLogs = cleanupOldLogs(
+			const cleanedLogs = cleanupOldLogs(
 				this.data.reviewLogs,
 				this.data.settings.logRetentionDays
 			);
+			if (Object.keys(cleanedLogs).length !== Object.keys(this.data.reviewLogs).length) {
+				this.data.reviewLogs = cleanedLogs;
+				dataChanged = true;
+			}
 
 			// 古い履歴のクリーンアップ（30日）
-			this.data.reviewHistory = cleanupOldHistory(this.data.reviewHistory, 30);
+			const cleanedHistory = cleanupOldHistory(this.data.reviewHistory, 30);
+			if (Object.keys(cleanedHistory).length !== Object.keys(this.data.reviewHistory).length) {
+				this.data.reviewHistory = cleanedHistory;
+				dataChanged = true;
+			}
 
 			// 日次統計のリセット確認
+			const previousDailyStatsDate = this.data.dailyStats.date;
 			this.checkDailyStatsReset();
+			if (this.data.dailyStats.date !== previousDailyStatsDate) {
+				dataChanged = true;
+			}
 
-			void this.syncAndSave();
+			if (dataChanged) {
+				void this.syncAndSave();
+			}
 		});
 	}
 
@@ -374,6 +392,28 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 */
 	private invalidateTimelineCache(): void {
 		this.timelineCardsCache = null;
+	}
+
+	private async enqueueSaveQueue(task: () => Promise<void>): Promise<void> {
+		this.saveQueueDepth++;
+		const runner = async (): Promise<void> => {
+			try {
+				await task();
+			} finally {
+				this.saveQueueDepth = Math.max(0, this.saveQueueDepth - 1);
+			}
+		};
+		this.saveQueue = this.saveQueue.then(runner, runner);
+		await this.saveQueue;
+	}
+
+	private scheduleReloadAfterQueue(): void {
+		if (this.reloadAfterQueueScheduled) return;
+		this.reloadAfterQueueScheduled = true;
+		void this.saveQueue.then(async () => {
+			this.reloadAfterQueueScheduled = false;
+			await this.reloadFromDisk(true);
+		});
 	}
 
 	/**
@@ -653,7 +693,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * saveQueue で直列化して競合を防止
 	 */
 	async syncAndSave(): Promise<void> {
-		this.saveQueue = this.saveQueue.then(async () => {
+		await this.enqueueSaveQueue(async () => {
 			try {
 				const diskRaw = await this.loadData() as Partial<PluginData> | null;
 				const remote = reconstructFullData(diskRaw);
@@ -663,7 +703,6 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			}
 			await this.saveData(this.data);
 		});
-		await this.saveQueue;
 	}
 
 	/**
@@ -675,9 +714,14 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		if (!force && now - this.lastReloadFromDiskAt < TimelineNoteLauncherPlugin.RELOAD_FROM_DISK_DEBOUNCE_MS) {
 			return;
 		}
-		this.lastReloadFromDiskAt = now;
+		// saveキューが混雑している場合は表示をブロックしない
+		if (!force && this.saveQueueDepth > 0) {
+			this.scheduleReloadAfterQueue();
+			return;
+		}
+		this.lastReloadFromDiskAt = Date.now();
 
-		this.saveQueue = this.saveQueue.then(async () => {
+		await this.enqueueSaveQueue(async () => {
 			try {
 				const diskRaw = await this.loadData() as Partial<PluginData> | null;
 				const remote = reconstructFullData(diskRaw);
@@ -687,6 +731,5 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 				// loadData失敗時はローカルをそのまま維持
 			}
 		});
-		await this.saveQueue;
 	}
 }

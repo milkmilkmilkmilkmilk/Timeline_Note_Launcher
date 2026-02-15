@@ -13,12 +13,25 @@ export type { EmbedRenderContext } from './pdfRenderer';
  */
 export async function activatePendingEmbeds(
 	ctx: EmbedRenderContext,
-	pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: string }>
+	pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: string }>,
+	maxItems: number = Number.POSITIVE_INFINITY,
+	parallel: boolean = false
 ): Promise<void> {
 	const entries = Array.from(pendingEmbeds.entries());
 	pendingEmbeds.clear();
-	for (const [container, { card, isGridMode, embedType }] of entries) {
-		if (!container.isConnected) continue;
+	const limit = Math.min(entries.length, Math.max(1, Math.floor(maxItems)));
+	for (let i = limit; i < entries.length; i++) {
+		const entry = entries[i];
+		if (entry) {
+			pendingEmbeds.set(entry[0], entry[1]);
+		}
+	}
+	const renderEmbed = async (
+		container: HTMLElement,
+		payload: { card: TimelineCard; isGridMode: boolean; embedType: string }
+	): Promise<void> => {
+		if (!container.isConnected) return;
+		const { card, isGridMode, embedType } = payload;
 		if (embedType === 'excalidraw') {
 			await renderExcalidrawCardPreview(ctx, container, card, isGridMode);
 		} else if (embedType === 'canvas') {
@@ -26,6 +39,23 @@ export async function activatePendingEmbeds(
 		} else {
 			await renderPdfCardPreview(ctx, container, card, isGridMode);
 		}
+	};
+
+	if (parallel) {
+		const tasks: Promise<void>[] = [];
+		for (let i = 0; i < limit; i++) {
+			const entry = entries[i];
+			if (!entry) continue;
+			tasks.push(renderEmbed(entry[0], entry[1]));
+		}
+		await Promise.allSettled(tasks);
+		return;
+	}
+
+	for (let i = 0; i < limit; i++) {
+		const entry = entries[i];
+		if (!entry) continue;
+		await renderEmbed(entry[0], entry[1]);
 	}
 }
 
@@ -186,6 +216,7 @@ export async function renderCanvasCardPreview(
 	}
 
 	createCanvasOpenButton(ctx, container, card);
+	createCanvasDetailButton(container);
 }
 
 /**
@@ -237,6 +268,30 @@ function createCanvasOpenButton(ctx: EmbedRenderContext, container: HTMLElement,
 	openBtn.addEventListener('click', (e) => {
 		e.stopPropagation();
 		void ctx.openNote(card);
+	});
+}
+
+/**
+ * Canvasプレビューの詳細表示トグルボタンを作成
+ */
+function createCanvasDetailButton(container: HTMLElement): void {
+	let isDetailed = false;
+	const detailBtn = container.createEl('button', {
+		cls: 'timeline-canvas-detail-btn',
+		text: '🔍 detail',
+	});
+
+	const syncState = (): void => {
+		container.classList.toggle('timeline-canvas-detailed', isDetailed);
+		detailBtn.textContent = isDetailed ? '↙ collapse' : '🔍 detail';
+		detailBtn.setAttribute('aria-label', isDetailed ? 'Collapse canvas preview' : 'Expand canvas preview');
+	};
+	syncState();
+
+	detailBtn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		isDetailed = !isDetailed;
+		syncState();
 	});
 }
 

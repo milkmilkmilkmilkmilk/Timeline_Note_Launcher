@@ -18,6 +18,16 @@ export interface PendingMarkdownRender {
 	sourcePath: string;
 }
 
+const PREVIEW_PLACEHOLDER_CHAR_LIMIT = 300;
+const PREVIEW_PLACEHOLDER_SCAN_LIMIT = 600;
+
+function buildPreviewPlaceholderText(preview: string): string {
+	const bounded = preview.length > PREVIEW_PLACEHOLDER_SCAN_LIMIT
+		? preview.slice(0, PREVIEW_PLACEHOLDER_SCAN_LIMIT)
+		: preview;
+	return bounded.replace(/[#*_~`>![\]()]/g, '').substring(0, PREVIEW_PLACEHOLDER_CHAR_LIMIT);
+}
+
 /**
  * カードレンダリングのコンテキスト
  */
@@ -228,13 +238,14 @@ export function createCardElement(ctx: CardRenderContext, card: TimelineCard): H
 			if (card.fileType === 'ipynb') {
 				previewEl.addClass('timeline-card-preview-ipynb');
 			}
+			const placeholderText = buildPreviewPlaceholderText(card.preview);
 			previewEl.createDiv({
 				cls: 'timeline-card-preview-placeholder',
-				text: card.preview.replace(/[#*_~`>![\]()]/g, '').substring(0, 300),
+				text: placeholderText.length > 0 ? placeholderText : 'Loading preview...',
 			});
 			ctx.pendingMarkdownRenders.push({
 				previewEl,
-				previewText: card.preview.replace(/\[\^/g, '\\[^'),
+				previewText: card.preview,
 				sourcePath: card.path,
 			});
 		} else {

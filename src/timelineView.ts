@@ -18,6 +18,11 @@ import type { CardRenderContext, PendingMarkdownRender } from './cardRenderer';
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
 
 export class TimelineView extends ItemView {
+	private static readonly SCROLL_IDLE_MS = 120;
+	private static readonly SCROLL_APPEND_CHUNK_SIZE = 6;
+	private static readonly EMBED_RENDER_BATCH_SIZE = 1;
+	private static readonly INITIAL_PDF_PRELOAD_COUNT = 3;
+	private static readonly VIEWPORT_PREFETCH_MARGIN_PX = 900;
 	private plugin: TimelineNoteLauncherPlugin;
 	private cards: TimelineCard[] = [];
 	private filteredCards: TimelineCard[] = [];
@@ -50,6 +55,10 @@ export class TimelineView extends ItemView {
 	private pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }> = new Map();
 	// 遅延Markdownレンダリング用キュー
 	private pendingMarkdownRenders: PendingMarkdownRender[] = [];
+	private hasPreloadedInitialPdfEmbeds: boolean = false;
+	private isFlushingEmbeds: boolean = false;
+	private isFlushingMarkdownRenders: boolean = false;
+	private lastScrollEventAt: number = 0;
 	// プルトゥリフレッシュ用
 	private pullState: PullToRefreshState = createPullToRefreshState();
 	private touchStartHandler: (e: TouchEvent) => void;
@@ -91,7 +100,7 @@ export class TimelineView extends ItemView {
 		this.listContainerEl.addEventListener('keydown', this.keydownHandler);
 
 		// 無限スクロール用スクロールイベント登録
-		this.listContainerEl.addEventListener('scroll', this.scrollHandler);
+		this.listContainerEl.addEventListener('scroll', this.scrollHandler, { passive: true });
 
 		// プルトゥリフレッシュ用タッチイベント登録（モバイルのみ）
 		if (Platform.isMobile) {
@@ -213,6 +222,8 @@ export class TimelineView extends ItemView {
 		this.scrollPosition = this.listContainerEl.scrollTop;
 		// 遅延Markdownレンダリングキューをクリア
 		this.pendingMarkdownRenders = [];
+		this.isFlushingEmbeds = false;
+		this.isFlushingMarkdownRenders = false;
 		// 検索デバウンスタイマーを解除
 		if (this.filterState.searchDebounceTimer !== null) {
 			window.clearTimeout(this.filterState.searchDebounceTimer);
@@ -282,25 +293,151 @@ export class TimelineView extends ItemView {
 		return { fragment, elements };
 	}
 
+	private async waitForScrollIdle(): Promise<void> {
+		while (true) {
+			const elapsed = Date.now() - this.lastScrollEventAt;
+			const remaining = TimelineView.SCROLL_IDLE_MS - elapsed;
+			if (remaining <= 0) return;
+			await new Promise<void>(resolve => { window.setTimeout(() => { resolve(); }, remaining); });
+			if (!this.listContainerEl?.isConnected) return;
+		}
+	}
+
+	private isNearViewport(element: HTMLElement): boolean {
+		const rootRect = this.listContainerEl.getBoundingClientRect();
+		const rect = element.getBoundingClientRect();
+		const margin = TimelineView.VIEWPORT_PREFETCH_MARGIN_PX;
+		return rect.bottom >= rootRect.top - margin && rect.top <= rootRect.bottom + margin;
+	}
+
+	private takeNearViewportEmbeds(
+		limit: number
+	): Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }> {
+		const selected = new Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }>();
+		if (!this.listContainerEl?.isConnected) return selected;
+
+		for (const [container, payload] of this.pendingEmbeds) {
+			if (!container.isConnected) {
+				this.pendingEmbeds.delete(container);
+				continue;
+			}
+			if (!this.isNearViewport(container)) continue;
+			this.pendingEmbeds.delete(container);
+			selected.set(container, payload);
+			if (selected.size >= limit) break;
+		}
+		return selected;
+	}
+
+	private takeInitialPdfEmbeds(
+		limit: number
+	): Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }> {
+		const selected = new Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }>();
+		if (limit <= 0) return selected;
+
+		for (const [container, payload] of this.pendingEmbeds) {
+			if (!container.isConnected) {
+				this.pendingEmbeds.delete(container);
+				continue;
+			}
+			if (payload.embedType !== 'pdf') continue;
+			this.pendingEmbeds.delete(container);
+			selected.set(container, payload);
+			if (selected.size >= limit) break;
+		}
+		return selected;
+	}
+
+	private hasNearViewportPendingEmbeds(): boolean {
+		let found = false;
+		for (const container of this.pendingEmbeds.keys()) {
+			if (!container.isConnected) {
+				this.pendingEmbeds.delete(container);
+				continue;
+			}
+			if (this.isNearViewport(container)) {
+				found = true;
+			}
+		}
+		return found;
+	}
+
+	private takeNextNearViewportMarkdownRender(): PendingMarkdownRender | null {
+		for (let i = 0; i < this.pendingMarkdownRenders.length; i++) {
+			const next = this.pendingMarkdownRenders[i];
+			if (!next) continue;
+			if (!next.previewEl.isConnected) {
+				this.pendingMarkdownRenders.splice(i, 1);
+				i--;
+				continue;
+			}
+			if (!this.isNearViewport(next.previewEl)) continue;
+			this.pendingMarkdownRenders.splice(i, 1);
+			return next;
+		}
+		return null;
+	}
+
 	/**
-	 * 遅延Markdownレンダリングを実行（初回ペイント後に3枚ずつバッチ処理）
+	 * 遅延埋め込みレンダリングをスクロールアイドル時に小分け実行
+	 */
+	private async flushPendingEmbeds(): Promise<void> {
+		if (this.isFlushingEmbeds) return;
+		this.isFlushingEmbeds = true;
+		try {
+			if (!this.hasPreloadedInitialPdfEmbeds) {
+				this.hasPreloadedInitialPdfEmbeds = true;
+				const initialPdfEmbeds = this.takeInitialPdfEmbeds(TimelineView.INITIAL_PDF_PRELOAD_COUNT);
+				if (initialPdfEmbeds.size > 0) {
+					await activatePendingEmbeds(
+						this.getEmbedRenderContext(),
+						initialPdfEmbeds,
+						TimelineView.INITIAL_PDF_PRELOAD_COUNT,
+						true
+					);
+					await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
+				}
+			}
+
+			while (this.pendingEmbeds.size > 0) {
+				await this.waitForScrollIdle();
+				const nearViewportEmbeds = this.takeNearViewportEmbeds(TimelineView.EMBED_RENDER_BATCH_SIZE);
+				if (nearViewportEmbeds.size === 0) return;
+				await activatePendingEmbeds(
+					this.getEmbedRenderContext(),
+					nearViewportEmbeds
+				);
+				await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
+			}
+		} finally {
+			this.isFlushingEmbeds = false;
+			if (this.pendingEmbeds.size > 0) {
+				if (this.hasNearViewportPendingEmbeds()) {
+					void this.flushPendingEmbeds();
+				}
+			}
+		}
+	}
+
+	/**
+	 * 遅延Markdownレンダリングをスクロールアイドル時に小分け実行
 	 */
 	private async flushPendingMarkdownRenders(): Promise<void> {
-		const renders = this.pendingMarkdownRenders.splice(0);
-		if (renders.length === 0) return;
-
-		// 初回ペイントを待つ
-		await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
-
-		const batchSize = 3;
-		for (let i = 0; i < renders.length; i += batchSize) {
-			const batch = renders.slice(i, i + batchSize);
-			await Promise.all(batch.map(async ({ previewEl, previewText, sourcePath }) => {
-				// ビュー切替等でDOMから切り離された場合はスキップ
-				if (!previewEl.isConnected) return;
+		if (this.isFlushingMarkdownRenders) return;
+		this.isFlushingMarkdownRenders = true;
+		try {
+			while (this.pendingMarkdownRenders.length > 0) {
+				await this.waitForScrollIdle();
+				const next = this.takeNextNearViewportMarkdownRender();
+				if (!next) return;
+				const { previewEl, previewText, sourcePath } = next;
+				if (!previewEl.isConnected) continue;
+				const escapedPreviewText = previewText.includes('[^')
+					? previewText.replace(/\[\^/g, '\\[^')
+					: previewText;
 				await MarkdownRenderer.render(
 					this.app,
-					previewText,
+					escapedPreviewText,
 					previewEl,
 					sourcePath,
 					this.renderComponent
@@ -309,12 +446,37 @@ export class TimelineView extends ItemView {
 				const placeholder = previewEl.querySelector('.timeline-card-preview-placeholder');
 				if (placeholder) placeholder.remove();
 				previewEl.removeClass('timeline-card-preview-pending');
-			}));
-			// バッチ間でUIスレッドを解放
-			if (i + batchSize < renders.length) {
+				await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
+			}
+		} finally {
+			this.isFlushingMarkdownRenders = false;
+			if (this.pendingMarkdownRenders.length > 0) {
+				const hasNearViewportPending = this.pendingMarkdownRenders.some(p => p.previewEl.isConnected && this.isNearViewport(p.previewEl));
+				if (hasNearViewportPending) {
+					void this.flushPendingMarkdownRenders();
+				}
+			}
+		}
+	}
+
+	/**
+	 * カード追加をチャンク化して1フレーム占有を抑える
+	 */
+	private async appendCardsInChunks(cards: TimelineCard[], isGridMode: boolean): Promise<HTMLElement[]> {
+		const elements: HTMLElement[] = [];
+		const chunkSize = TimelineView.SCROLL_APPEND_CHUNK_SIZE;
+		if (!this.listEl || cards.length === 0) return elements;
+
+		for (let i = 0; i < cards.length; i += chunkSize) {
+			const chunk = cards.slice(i, i + chunkSize);
+			const { fragment, elements: chunkEls } = this.renderCardsToFragment(chunk, isGridMode);
+			this.listEl.appendChild(fragment);
+			elements.push(...chunkEls);
+			if (i + chunkSize < cards.length) {
 				await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
 			}
 		}
+		return elements;
 	}
 
 	/**
@@ -348,6 +510,7 @@ export class TimelineView extends ItemView {
 		// 古いレンダリングをクリーンアップ
 		this.pendingEmbeds.clear();
 		this.pendingMarkdownRenders = [];
+		this.hasPreloadedInitialPdfEmbeds = false;
 		this.renderComponent.unload();
 		this.renderComponent = new Component();
 		this.renderComponent.load();
@@ -453,7 +616,7 @@ export class TimelineView extends ItemView {
 		this.cardElements = elements;
 		this.listEl.appendChild(fragment);
 		// DOM接続後にPDF埋め込みとMarkdownレンダリングを遅延実行
-		void activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		void this.flushPendingEmbeds();
 		void this.flushPendingMarkdownRenders();
 
 		// 下部フッター
@@ -679,13 +842,15 @@ export class TimelineView extends ItemView {
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
+		this.pendingEmbeds.clear();
 		this.pendingMarkdownRenders = [];
+		this.hasPreloadedInitialPdfEmbeds = false;
 		const { fragment: listFragment, elements: listElements } = this.renderCardsToFragment(
 			this.filteredCards.slice(0, this.displayedCount), isGridMode
 		);
 		this.cardElements = listElements;
 		this.listEl.appendChild(listFragment);
-		void activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		void this.flushPendingEmbeds();
 		void this.flushPendingMarkdownRenders();
 
 		this.focusedIndex = -1;
@@ -853,6 +1018,9 @@ export class TimelineView extends ItemView {
 	 * スクロールハンドラー（無限スクロール用）
 	 */
 	private handleScroll(): void {
+		this.lastScrollEventAt = Date.now();
+		void this.flushPendingEmbeds();
+		void this.flushPendingMarkdownRenders();
 		if (!this.plugin.data.settings.enableInfiniteScroll) return;
 		if (this.isLoadingMore) return;
 		if (this.displayedCount >= this.filteredCards.length) return;
@@ -882,15 +1050,12 @@ export class TimelineView extends ItemView {
 		const startIndex = this.displayedCount;
 		const endIndex = Math.min(startIndex + batchSize, this.filteredCards.length);
 
-		// 追加カードを同期描画（Markdownレンダリングは遅延実行）
+		// 追加カードをチャンク描画（Markdownレンダリングは遅延実行）
 		const cardsToLoad = this.filteredCards.slice(startIndex, endIndex).filter((c): c is TimelineCard => !!c);
-		const { fragment: moreFragment, elements: moreElements } = this.renderCardsToFragment(
-			cardsToLoad, isGridMode
-		);
+		const moreElements = await this.appendCardsInChunks(cardsToLoad, isGridMode);
 		this.cardElements.push(...moreElements);
-		this.listEl.appendChild(moreFragment);
 		// DOM接続後にPDF埋め込みとMarkdownレンダリングを遅延実行
-		void activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		void this.flushPendingEmbeds();
 		void this.flushPendingMarkdownRenders();
 
 		this.displayedCount = endIndex;
