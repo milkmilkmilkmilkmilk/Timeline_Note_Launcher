@@ -1,7 +1,7 @@
 // Timeline Note Launcher - Card Renderer
 // timelineView.ts から抽出されたカードレンダリングロジック
-import { TFile, MarkdownRenderer, Menu, setIcon } from 'obsidian';
-import type { App, Component } from 'obsidian';
+import { TFile, Menu, setIcon } from 'obsidian';
+import type { App } from 'obsidian';
 import type { TimelineCard, DifficultyRating } from './types';
 import type TimelineNoteLauncherPlugin from './main';
 import type { EmbedRenderContext } from './pdfRenderer';
@@ -12,14 +12,20 @@ import { LinkNoteModal } from './linkNoteModal';
 import { getNextIntervals } from './dataLayer';
 import { formatRelativeDate, getFileTypeIcon, formatPropertyValue } from './timelineViewUtils';
 
+export interface PendingMarkdownRender {
+	previewEl: HTMLElement;
+	previewText: string;
+	sourcePath: string;
+}
+
 /**
  * カードレンダリングのコンテキスト
  */
 export interface CardRenderContext {
 	app: App;
 	plugin: TimelineNoteLauncherPlugin;
-	renderComponent: Component;
 	pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }>;
+	pendingMarkdownRenders: PendingMarkdownRender[];
 	embedRenderContext: EmbedRenderContext;
 	openNote(card: TimelineCard): Promise<void>;
 	isFileBookmarked(path: string): boolean;
@@ -29,7 +35,7 @@ export interface CardRenderContext {
 /**
  * リストカード要素を作成
  */
-export async function createCardElement(ctx: CardRenderContext, card: TimelineCard): Promise<HTMLElement> {
+export function createCardElement(ctx: CardRenderContext, card: TimelineCard): HTMLElement {
 	const cardEl = createDiv({ cls: ['timeline-card', `timeline-card-type-${card.fileType}`] });
 	if (card.pinned) {
 		cardEl.addClass('timeline-card-pinned');
@@ -217,20 +223,20 @@ export async function createCardElement(ctx: CardRenderContext, card: TimelineCa
 	if (card.fileType !== 'canvas' && card.fileType !== 'office') {
 		const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
 		if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
-			// 脚注記法をエスケープ（プレビューでは参照先がないため）
-			const previewText = card.preview.replace(/\[\^/g, '\\[^');
-			// マークダウンをレンダリング
-			await MarkdownRenderer.render(
-				ctx.app,
-				previewText,
-				previewEl,
-				card.path,
-				ctx.renderComponent
-			);
-			// ipynbの場合はクラスを追加
+			// プレースホルダーを即座に描画（Markdownレンダリングは遅延実行）
+			previewEl.addClass('timeline-card-preview-pending');
 			if (card.fileType === 'ipynb') {
 				previewEl.addClass('timeline-card-preview-ipynb');
 			}
+			previewEl.createDiv({
+				cls: 'timeline-card-preview-placeholder',
+				text: card.preview.replace(/[#*_~`>![\]()]/g, '').substring(0, 300),
+			});
+			ctx.pendingMarkdownRenders.push({
+				previewEl,
+				previewText: card.preview.replace(/\[\^/g, '\\[^'),
+				sourcePath: card.path,
+			});
 		} else {
 			// 非マークダウンはプレーンテキスト表示
 			previewEl.addClass('timeline-card-preview-file');

@@ -760,6 +760,15 @@
 	word-wrap: break-word;
 }
 
+/* Markdownレンダリング遅延中のプレースホルダー */
+.timeline-card-preview-placeholder {
+	color: var(--text-muted);
+	font-size: 13px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	overflow: hidden;
+}
+
 /* Fixed lines モード時のプレビュー高さ制約 */
 .timeline-preview-clamped .timeline-card-preview {
 	max-height: var(--preview-max-height, 120px);

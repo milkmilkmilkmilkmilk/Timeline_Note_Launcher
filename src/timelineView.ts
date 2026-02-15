@@ -1,5 +1,5 @@
 // Timeline Note Launcher - Timeline View
-import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, Component } from 'obsidian';
+import { ItemView, WorkspaceLeaf, WorkspaceSplit, Platform, TFile, MarkdownRenderer, Component } from 'obsidian';
 import { TimelineCard, ColorTheme, ImageSizeMode, UITheme, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 import { getBookmarkedPaths, getBookmarksPlugin, clearBookmarkCache } from './dataLayer';
 import type TimelineNoteLauncherPlugin from './main';
@@ -13,7 +13,7 @@ import type { FilterBarState, FilterBarContext } from './filterBar';
 import { handleKeydown } from './keyboardNav';
 import type { KeyboardNavContext } from './keyboardNav';
 import { createCardElement, createGridCardElement, createDifficultyButtons, replaceWithUndoButton } from './cardRenderer';
-import type { CardRenderContext } from './cardRenderer';
+import type { CardRenderContext, PendingMarkdownRender } from './cardRenderer';
 
 export const TIMELINE_VIEW_TYPE = 'timeline-note-launcher';
 
@@ -48,6 +48,8 @@ export class TimelineView extends ItemView {
 	private listEl: HTMLElement | null = null;
 	// 遅延レンダリング用：DOM接続後に処理するコンテナ→カードデータの対応（PDF/Excalidraw）
 	private pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'pdf' | 'excalidraw' | 'canvas' }> = new Map();
+	// 遅延Markdownレンダリング用キュー
+	private pendingMarkdownRenders: PendingMarkdownRender[] = [];
 	// プルトゥリフレッシュ用
 	private pullState: PullToRefreshState = createPullToRefreshState();
 	private touchStartHandler: (e: TouchEvent) => void;
@@ -178,6 +180,8 @@ export class TimelineView extends ItemView {
 	onClose(): Promise<void> {
 		// スクロール位置を保存
 		this.scrollPosition = this.listContainerEl.scrollTop;
+		// 遅延Markdownレンダリングキューをクリア
+		this.pendingMarkdownRenders = [];
 		// 検索デバウンスタイマーを解除
 		if (this.filterState.searchDebounceTimer !== null) {
 			window.clearTimeout(this.filterState.searchDebounceTimer);
@@ -230,29 +234,56 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
-	 * カードをチャンク単位で描画しDocumentFragmentに追加
+	 * カードをDocumentFragmentに追加（同期処理）
 	 */
-	private async renderCardsToFragment(
+	private renderCardsToFragment(
 		cards: TimelineCard[],
 		isGridMode: boolean,
-		chunkSize: number = 5
-	): Promise<{ fragment: DocumentFragment; elements: HTMLElement[] }> {
+	): { fragment: DocumentFragment; elements: HTMLElement[] } {
 		const fragment = document.createDocumentFragment();
 		const elements: HTMLElement[] = [];
-		for (let i = 0; i < cards.length; i += chunkSize) {
-			const chunk = cards.slice(i, i + chunkSize);
-			const cardCtx = this.getCardRenderContext();
-			const chunkEls = await Promise.all(
-				chunk.map(card =>
-					isGridMode ? createGridCardElement(cardCtx, card) : createCardElement(cardCtx, card)
-				)
-			);
-			for (const el of chunkEls) {
-				fragment.appendChild(el);
-				elements.push(el);
-			}
+		const cardCtx = this.getCardRenderContext();
+		for (const card of cards) {
+			const el = isGridMode ? createGridCardElement(cardCtx, card) : createCardElement(cardCtx, card);
+			fragment.appendChild(el);
+			elements.push(el);
 		}
 		return { fragment, elements };
+	}
+
+	/**
+	 * 遅延Markdownレンダリングを実行（初回ペイント後に3枚ずつバッチ処理）
+	 */
+	private async flushPendingMarkdownRenders(): Promise<void> {
+		const renders = this.pendingMarkdownRenders.splice(0);
+		if (renders.length === 0) return;
+
+		// 初回ペイントを待つ
+		await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
+
+		const batchSize = 3;
+		for (let i = 0; i < renders.length; i += batchSize) {
+			const batch = renders.slice(i, i + batchSize);
+			await Promise.all(batch.map(async ({ previewEl, previewText, sourcePath }) => {
+				// ビュー切替等でDOMから切り離された場合はスキップ
+				if (!previewEl.isConnected) return;
+				await MarkdownRenderer.render(
+					this.app,
+					previewText,
+					previewEl,
+					sourcePath,
+					this.renderComponent
+				);
+				// プレースホルダーを削除してpendingクラスを除去
+				const placeholder = previewEl.querySelector('.timeline-card-preview-placeholder');
+				if (placeholder) placeholder.remove();
+				previewEl.removeClass('timeline-card-preview-pending');
+			}));
+			// バッチ間でUIスレッドを解放
+			if (i + batchSize < renders.length) {
+				await new Promise<void>(resolve => { requestAnimationFrame(() => { resolve(); }); });
+			}
+		}
 	}
 
 	/**
@@ -284,6 +315,7 @@ export class TimelineView extends ItemView {
 
 		// 古いレンダリングをクリーンアップ
 		this.pendingEmbeds.clear();
+		this.pendingMarkdownRenders = [];
 		this.renderComponent.unload();
 		this.renderComponent = new Component();
 		this.renderComponent.load();
@@ -382,14 +414,15 @@ export class TimelineView extends ItemView {
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
-		// 初期カードをチャンク描画
-		const { fragment, elements } = await this.renderCardsToFragment(
+		// 初期カードを同期描画（Markdownレンダリングは遅延実行）
+		const { fragment, elements } = this.renderCardsToFragment(
 			this.filteredCards.slice(0, this.displayedCount), isGridMode
 		);
 		this.cardElements = elements;
 		this.listEl.appendChild(fragment);
-		// DOM接続後にPDF埋め込みを実行
-		await activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		// DOM接続後にPDF埋め込みとMarkdownレンダリングを遅延実行
+		void activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		void this.flushPendingMarkdownRenders();
 
 		// 下部フッター
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
@@ -614,11 +647,14 @@ export class TimelineView extends ItemView {
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
-		const { fragment: listFragment, elements: listElements } = await this.renderCardsToFragment(
+		this.pendingMarkdownRenders = [];
+		const { fragment: listFragment, elements: listElements } = this.renderCardsToFragment(
 			this.filteredCards.slice(0, this.displayedCount), isGridMode
 		);
 		this.cardElements = listElements;
 		this.listEl.appendChild(listFragment);
+		void activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		void this.flushPendingMarkdownRenders();
 
 		this.focusedIndex = -1;
 
@@ -644,8 +680,8 @@ export class TimelineView extends ItemView {
 		return {
 			app: this.app,
 			plugin: this.plugin,
-			renderComponent: this.renderComponent,
 			pendingEmbeds: this.pendingEmbeds,
+			pendingMarkdownRenders: this.pendingMarkdownRenders,
 			embedRenderContext: this.getEmbedRenderContext(),
 			openNote: (card) => this.openNote(card),
 			isFileBookmarked: (path) => this.isFileBookmarked(path),
@@ -814,15 +850,16 @@ export class TimelineView extends ItemView {
 		const startIndex = this.displayedCount;
 		const endIndex = Math.min(startIndex + batchSize, this.filteredCards.length);
 
-		// 追加カードをチャンク描画
+		// 追加カードを同期描画（Markdownレンダリングは遅延実行）
 		const cardsToLoad = this.filteredCards.slice(startIndex, endIndex).filter((c): c is TimelineCard => !!c);
-		const { fragment: moreFragment, elements: moreElements } = await this.renderCardsToFragment(
+		const { fragment: moreFragment, elements: moreElements } = this.renderCardsToFragment(
 			cardsToLoad, isGridMode
 		);
 		this.cardElements.push(...moreElements);
 		this.listEl.appendChild(moreFragment);
-		// DOM接続後にPDF埋め込みを実行
-		await activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		// DOM接続後にPDF埋め込みとMarkdownレンダリングを遅延実行
+		void activatePendingEmbeds(this.getEmbedRenderContext(), this.pendingEmbeds);
+		void this.flushPendingMarkdownRenders();
 
 		this.displayedCount = endIndex;
 		this.isLoadingMore = false;
