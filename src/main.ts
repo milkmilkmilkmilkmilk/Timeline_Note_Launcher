@@ -23,7 +23,9 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	data: PluginData;
 	private autoRefreshInterval: number | null = null;
 	private backlinkIndexCache: { index: BacklinkIndex; timestamp: number } | null = null;
-	private static readonly BACKLINK_CACHE_TTL = 10_000;
+	private static readonly BACKLINK_CACHE_TTL = 300_000;
+	private timelineCardsCache: { cards: TimelineCard[]; newCount: number; dueCount: number; timestamp: number } | null = null;
+	private static readonly TIMELINE_CACHE_TTL = 15_000;
 	// 評価取り消し用スナップショット（セッション限り）
 	private ratingUndoMap: Map<string, RatingUndoSnapshot> = new Map();
 	// 保存キュー（直列化用）
@@ -271,7 +273,33 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		// バックグラウンドで保存（UIをブロックしない）
 		void this.syncAndSave();
 
-		return { cards, newCount: result.newCount, dueCount: result.dueCount };
+		const timelineResult = { cards, newCount: result.newCount, dueCount: result.dueCount };
+		this.timelineCardsCache = {
+			...timelineResult,
+			timestamp: Date.now(),
+		};
+		return timelineResult;
+	}
+
+	/**
+	 * 直近のタイムラインカードキャッシュを取得（短TTL）
+	 */
+	getCachedTimelineCards(): { cards: TimelineCard[]; newCount: number; dueCount: number } | null {
+		if (!this.timelineCardsCache) return null;
+		const age = Date.now() - this.timelineCardsCache.timestamp;
+		if (age > TimelineNoteLauncherPlugin.TIMELINE_CACHE_TTL) return null;
+		return {
+			cards: this.timelineCardsCache.cards,
+			newCount: this.timelineCardsCache.newCount,
+			dueCount: this.timelineCardsCache.dueCount,
+		};
+	}
+
+	/**
+	 * タイムラインキャッシュを無効化
+	 */
+	private invalidateTimelineCache(): void {
+		this.timelineCardsCache = null;
 	}
 
 	/**
@@ -293,6 +321,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	async markAsReviewed(path: string): Promise<void> {
 		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]?.reviewCount === 0;
 		this.data.reviewLogs = updateReviewLog(this.data.reviewLogs, path);
+		this.invalidateTimelineCache();
 
 		// ファイルタイプを取得
 		const extension = path.split('.').pop() || 'md';
@@ -320,6 +349,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 */
 	async rateCard(path: string, rating: DifficultyRating): Promise<void> {
 		const wasNew = !this.data.reviewLogs[path] || this.data.reviewLogs[path]?.reviewCount === 0;
+		this.invalidateTimelineCache();
 
 		// ファイルタイプを取得
 		const extension = path.split('.').pop() || 'md';
@@ -361,6 +391,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	async undoRating(path: string): Promise<boolean> {
 		const snapshot = this.ratingUndoMap.get(path);
 		if (!snapshot) return false;
+		this.invalidateTimelineCache();
 
 		// スナップショットを消費（1回限り）
 		this.ratingUndoMap.delete(path);
@@ -406,6 +437,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 */
 	refreshAllViews(): void {
 		this.backlinkIndexCache = null;
+		this.invalidateTimelineCache();
 		this.ratingUndoMap.clear();
 		const leaves = this.app.workspace.getLeavesOfType(TIMELINE_VIEW_TYPE);
 		for (const leaf of leaves) {

@@ -115,7 +115,27 @@ export class TimelineView extends ItemView {
 			this.previousActiveLeaf = currentActive;
 		}
 
-		await this.refresh();
+		// 直近キャッシュがあれば先に描画して体感を改善
+		const cached = this.plugin.getCachedTimelineCards();
+		if (cached) {
+			this.cards = cached.cards;
+			this.cachedAllTags = collectAllTags(this.cards);
+			this.newCount = cached.newCount;
+			this.dueCount = cached.dueCount;
+			await this.render();
+		} else {
+			this.renderLoadingState();
+		}
+
+		// 最新データはバックグラウンドで更新
+		void this.refresh();
+	}
+
+	private renderLoadingState(): void {
+		this.listContainerEl.empty();
+		const loading = this.listContainerEl.createDiv({ cls: 'timeline-loading-indicator' });
+		loading.createSpan({ cls: 'timeline-loading-spinner' });
+		loading.createSpan({ cls: 'timeline-loading-text', text: 'Loading timeline...' });
 	}
 
 	/**
