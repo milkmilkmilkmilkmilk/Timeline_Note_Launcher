@@ -4,7 +4,7 @@ import { TFile, Menu, setIcon } from 'obsidian';
 import type { App } from 'obsidian';
 import type { TimelineCard, DifficultyRating } from './types';
 import type TimelineNoteLauncherPlugin from './main';
-import type { EmbedRenderContext } from './pdfRenderer';
+import type { EmbedRenderContext } from './embedRenderers';
 import { renderOfficeFallback } from './embedRenderers';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
@@ -28,6 +28,33 @@ function buildPreviewPlaceholderText(preview: string): string {
 	return bounded.replace(/[#*_~`>![\]()]/g, '').substring(0, PREVIEW_PLACEHOLDER_CHAR_LIMIT);
 }
 
+function hasActiveSelectionWithin(container: HTMLElement): boolean {
+	const selection = window.getSelection();
+	if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+		return false;
+	}
+
+	for (let i = 0; i < selection.rangeCount; i++) {
+		const range = selection.getRangeAt(i);
+		if (range.collapsed) continue;
+
+		try {
+			if (range.intersectsNode(container)) {
+				return true;
+			}
+		} catch {
+			// Fallback for environments where intersectsNode may throw.
+		}
+
+		const ancestor = range.commonAncestorContainer;
+		if (container.contains(ancestor)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /**
  * カードレンダリングのコンテキスト
  */
@@ -40,12 +67,235 @@ export interface CardRenderContext {
 	openNote(card: TimelineCard): Promise<void>;
 	isFileBookmarked(path: string): boolean;
 	toggleBookmark(path: string): boolean;
+	applySrsCountDelta(deltaNew: number, deltaDue: number): void;
+	refresh(): Promise<void>;
+}
+
+function createTwitterActionButton(
+	container: HTMLElement,
+	icon: string,
+	label: string,
+	onClick: (event: MouseEvent) => void,
+	extraClass = '',
+): HTMLButtonElement {
+	const button = container.createEl('button', {
+		cls: `timeline-action-btn timeline-twitter-v2-action ${extraClass}`.trim(),
+		attr: { 'aria-label': label },
+	});
+	const iconEl = button.createSpan({ cls: 'timeline-twitter-v2-action-icon' });
+	setIcon(iconEl, icon);
+	button.createSpan({ cls: 'timeline-action-label', text: label });
+	button.addEventListener('click', (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		onClick(event);
+	});
+	return button;
+}
+
+function renderTwitterCardMedia(
+	ctx: CardRenderContext,
+	containerEl: HTMLElement,
+	card: TimelineCard,
+): void {
+	if (!card.firstImagePath) return;
+
+	if (card.fileType === 'pdf') {
+		const thumbnailEl = containerEl.createDiv({ cls: 'timeline-card-thumbnail timeline-twitter-card-media timeline-card-pdf-embed' });
+		ctx.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'pdf' });
+		return;
+	}
+	if (card.fileType === 'excalidraw') {
+		const thumbnailEl = containerEl.createDiv({ cls: 'timeline-card-thumbnail timeline-twitter-card-media timeline-card-excalidraw-embed' });
+		ctx.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'excalidraw' });
+		return;
+	}
+	if (card.fileType === 'canvas') {
+		const thumbnailEl = containerEl.createDiv({ cls: 'timeline-card-thumbnail timeline-twitter-card-media timeline-card-canvas-embed' });
+		ctx.pendingEmbeds.set(thumbnailEl, { card, isGridMode: false, embedType: 'canvas' });
+		return;
+	}
+	if (card.fileType === 'office') {
+		const thumbnailEl = containerEl.createDiv({ cls: 'timeline-card-thumbnail timeline-twitter-card-media timeline-card-office-embed' });
+		renderOfficeFallback(ctx.embedRenderContext, thumbnailEl, card, false);
+		return;
+	}
+
+	const mediaEl = containerEl.createDiv({ cls: 'timeline-card-thumbnail timeline-twitter-card-media' });
+	if (card.firstImagePath.startsWith('data:')) {
+		mediaEl.createEl('img', { attr: { src: card.firstImagePath, alt: card.title } });
+		return;
+	}
+	if (card.firstImagePath.startsWith('http://') || card.firstImagePath.startsWith('https://')) {
+		mediaEl.createEl('img', { attr: { src: card.firstImagePath, alt: card.title } });
+		return;
+	}
+
+	const imageFile = ctx.app.vault.getAbstractFileByPath(card.firstImagePath);
+	if (imageFile && imageFile instanceof TFile) {
+		const resourcePath = ctx.app.vault.getResourcePath(imageFile);
+		mediaEl.createEl('img', { attr: { src: resourcePath, alt: card.title } });
+	}
+}
+
+function getTwitterSrsLabel(card: TimelineCard): string {
+	if (card.isDue) return 'Due';
+	if (card.isNew) return 'New';
+	if (card.nextReviewAt) {
+		return `Next ${formatRelativeDate(new Date(card.nextReviewAt))}`;
+	}
+	if (card.interval > 0) {
+		return `${card.interval}d`;
+	}
+	return 'Reviewed';
+}
+
+function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard): HTMLElement {
+	const settings = ctx.plugin.data.settings;
+	const cardEl = createDiv({ cls: ['timeline-card', `timeline-card-type-${card.fileType}`, 'timeline-twitter-v2-card'] });
+	if (card.pinned) cardEl.addClass('timeline-card-pinned');
+	if (card.isNew) cardEl.addClass('timeline-card-new');
+	if (card.isDue) cardEl.addClass('timeline-card-due');
+
+	const contentEl = cardEl.createDiv({ cls: 'timeline-card-content' });
+
+	const headerEl = contentEl.createDiv({ cls: 'timeline-twitter-card-header' });
+	const avatarEl = headerEl.createDiv({ cls: 'timeline-twitter-card-avatar' });
+	avatarEl.textContent = settings.twitterAvatarEmoji.trim() || '\u{1F4DD}';
+
+	const userMetaEl = headerEl.createDiv({ cls: 'timeline-twitter-card-user' });
+	userMetaEl.createDiv({
+		cls: 'timeline-twitter-card-display-name',
+		text: settings.twitterDisplayName.trim() || 'Timeline User',
+	});
+	userMetaEl.createDiv({
+		cls: 'timeline-twitter-card-handle',
+		text: settings.twitterHandle.trim() || '@timeline_user',
+	});
+
+	const timestamp = card.createdAt ?? card.lastReviewedAt;
+	headerEl.createDiv({
+		cls: 'timeline-twitter-card-date',
+		text: timestamp ? new Date(timestamp).toLocaleDateString() : '',
+	});
+
+	const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview timeline-twitter-card-preview' });
+	if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
+		previewEl.addClass('timeline-card-preview-pending');
+		const placeholderText = buildPreviewPlaceholderText(card.preview);
+		previewEl.createDiv({
+			cls: 'timeline-card-preview-placeholder',
+			text: placeholderText.length > 0 ? placeholderText : 'Loading preview...',
+		});
+		ctx.pendingMarkdownRenders.push({
+			previewEl,
+			previewText: card.preview,
+			sourcePath: card.path,
+		});
+	} else {
+		previewEl.addClass('timeline-card-preview-file');
+		previewEl.createSpan({
+			cls: 'timeline-file-preview-text',
+			text: card.preview,
+		});
+	}
+
+	renderTwitterCardMedia(ctx, contentEl, card);
+
+	const helperEl = contentEl.createDiv({ cls: 'timeline-twitter-card-helper' });
+	helperEl.createDiv({ cls: 'timeline-twitter-card-helper-title', text: card.title });
+	helperEl.createDiv({ cls: 'timeline-twitter-card-helper-path', text: card.path });
+
+	const actionsEl = contentEl.createDiv({ cls: 'timeline-card-actions timeline-twitter-v2-actions' });
+	createTwitterActionButton(actionsEl, 'message-circle', 'Comment', () => {
+		const file = ctx.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			new CommentModal(ctx.app, ctx.plugin, file).open();
+		}
+	});
+	createTwitterActionButton(actionsEl, 'repeat', 'Quote note', () => {
+		const file = ctx.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			new QuoteNoteModal(ctx.app, ctx.plugin, file).open();
+		}
+	});
+	createTwitterActionButton(actionsEl, 'heart', 'Good rating', () => {
+		void ctx.plugin.rateCard(card.path, 'good')
+			.then(() => {
+				ctx.applySrsCountDelta(card.isNew ? -1 : 0, card.isDue ? -1 : 0);
+				return ctx.refresh();
+			})
+			.catch((error: unknown) => {
+				console.error('Failed to apply good rating from Twitter action:', error);
+			});
+	});
+	createTwitterActionButton(actionsEl, 'share', 'Link note', () => {
+		const file = ctx.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			new LinkNoteModal(ctx.app, ctx.plugin, file).open();
+		}
+	});
+
+	const bookmarkAction = createTwitterActionButton(actionsEl, 'bookmark', 'Bookmark', () => {
+		const nowBookmarked = ctx.toggleBookmark(card.path);
+		bookmarkAction.classList.toggle('is-bookmarked', nowBookmarked);
+		bookmarkAction.setAttribute('aria-label', nowBookmarked ? 'Remove bookmark' : 'Add bookmark');
+	});
+	const initiallyBookmarked = ctx.isFileBookmarked(card.path);
+	bookmarkAction.classList.toggle('is-bookmarked', initiallyBookmarked);
+	bookmarkAction.setAttribute('aria-label', initiallyBookmarked ? 'Remove bookmark' : 'Add bookmark');
+
+	createTwitterActionButton(actionsEl, 'more-horizontal', 'More', (event) => {
+		const menu = new Menu();
+		menu.addItem((item) => item.setTitle('Open note').onClick(() => { void ctx.openNote(card); }));
+		menu.addItem((item) => item.setTitle('Open file menu').onClick(() => {
+			const file = ctx.app.vault.getAbstractFileByPath(card.path);
+			if (!file || !(file instanceof TFile)) return;
+			const fileMenu = new Menu();
+			ctx.app.workspace.trigger('file-menu', fileMenu, file, 'file-explorer-context-menu', null);
+			fileMenu.showAtMouseEvent(event);
+		}));
+		menu.showAtMouseEvent(event);
+	}, 'timeline-twitter-v2-action-overflow');
+
+	if (settings.twitterShowSrsInActions) {
+		actionsEl.createSpan({
+			cls: 'timeline-twitter-srs-chip',
+			text: getTwitterSrsLabel(card),
+		});
+	}
+
+	contentEl.addEventListener('click', () => {
+		if (hasActiveSelectionWithin(contentEl)) return;
+		void ctx.openNote(card);
+	});
+	cardEl.addEventListener('contextmenu', (event) => {
+		if (hasActiveSelectionWithin(contentEl)) return;
+		event.preventDefault();
+		const file = ctx.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			const menu = new Menu();
+			ctx.app.workspace.trigger('file-menu', menu, file, 'file-explorer-context-menu', null);
+			menu.showAtMouseEvent(event);
+		}
+	});
+
+	if (settings.showDifficultyButtons) {
+		const buttonsEl = cardEl.createDiv({ cls: 'timeline-difficulty-buttons' });
+		createDifficultyButtons(ctx, buttonsEl, card);
+	}
+
+	return cardEl;
 }
 
 /**
  * リストカード要素を作成
  */
 export function createCardElement(ctx: CardRenderContext, card: TimelineCard): HTMLElement {
+	if (ctx.plugin.data.settings.uiTheme === 'twitter') {
+		return createTwitterV2CardElement(ctx, card);
+	}
+
 	const cardEl = createDiv({ cls: ['timeline-card', `timeline-card-type-${card.fileType}`] });
 	if (card.pinned) {
 		cardEl.addClass('timeline-card-pinned');
@@ -474,11 +724,13 @@ export function createCardElement(ctx: CardRenderContext, card: TimelineCard): H
 
 	// クリック/タップでノートを開く
 	contentEl.addEventListener('click', () => {
+		if (hasActiveSelectionWithin(contentEl)) return;
 		void ctx.openNote(card);
 	});
 
 	// 右クリックでコンテキストメニュー
 	cardEl.addEventListener('contextmenu', (e) => {
+		if (hasActiveSelectionWithin(contentEl)) return;
 		e.preventDefault();
 		const file = ctx.app.vault.getAbstractFileByPath(card.path);
 		if (file && file instanceof TFile) {
@@ -663,6 +915,7 @@ export function createDifficultyButtons(ctx: CardRenderContext, container: HTMLE
 		buttonEl.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void ctx.plugin.rateCard(card.path, btn.rating).then(() => {
+				ctx.applySrsCountDelta(card.isNew ? -1 : 0, card.isDue ? -1 : 0);
 				container.closest('.timeline-card')?.addClass('timeline-card-reviewed');
 				replaceWithUndoButton(ctx, container, card);
 			});
@@ -686,6 +939,7 @@ export function replaceWithUndoButton(ctx: CardRenderContext, container: HTMLEle
 		e.stopPropagation();
 		void ctx.plugin.undoRating(card.path).then((success) => {
 			if (success) {
+				ctx.applySrsCountDelta(card.isNew ? 1 : 0, card.isDue ? 1 : 0);
 				// レビュー済みクラスを解除
 				container.closest('.timeline-card')?.removeClass('timeline-card-reviewed');
 				// Undoクラスを除去し難易度ボタンを再描画
@@ -696,3 +950,4 @@ export function replaceWithUndoButton(ctx: CardRenderContext, container: HTMLEle
 		});
 	});
 }
+

@@ -2,7 +2,7 @@
 // settings.ts から抽出された各設定セクションのUI構築ロジック
 import { Setting, Platform } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
-import { SelectionMode, SrsReviewUnlockMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, UITheme, DEFAULT_QUOTE_NOTE_TEMPLATE, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
+import { SelectionMode, SrsReviewUnlockMode, PreviewMode, ColorTheme, ViewMode, ImageSizeMode, UITheme, TwitterRailDensity, TwitterFeatherAction, DEFAULT_QUOTE_NOTE_TEMPLATE, DEFAULT_QUICK_NOTE_TEMPLATE } from './types';
 
 /**
  * 設定セクション構築のコンテキスト
@@ -268,15 +268,15 @@ export function buildDisplaySection(ctx: SettingSectionContext): void {
 		.setName('Color theme')
 		.setDesc('Accent color for timeline cards')
 		.addDropdown(dropdown => dropdown
-			.addOption('default', '耳 default')
-			.addOption('blue', '鳩 blue')
-			.addOption('cyan', 'ｩｵ cyan')
-			.addOption('green', '泙 green')
-			.addOption('yellow', '泯 yellow')
-			.addOption('orange', '泛 orange')
-			.addOption('red', '閥 red')
-			.addOption('pink', 'ｩｷ pink')
-			.addOption('purple', '泪 purple')
+			.addOption('default', '標準 default')
+			.addOption('blue', '青 blue')
+			.addOption('cyan', '水色 cyan')
+			.addOption('green', '緑 green')
+			.addOption('yellow', '黄 yellow')
+			.addOption('orange', '橙 orange')
+			.addOption('red', '赤 red')
+			.addOption('pink', '桃 pink')
+			.addOption('purple', '紫 purple')
 			.setValue(ctx.plugin.data.settings.colorTheme)
 			.onChange(async (value) => {
 				ctx.plugin.data.settings.colorTheme = value as ColorTheme;
@@ -296,6 +296,82 @@ export function buildDisplaySection(ctx: SettingSectionContext): void {
 				await ctx.plugin.syncAndSave();
 				ctx.plugin.refreshAllViews();
 			}));
+
+	if (ctx.plugin.data.settings.uiTheme === 'twitter') {
+		new Setting(ctx.containerEl)
+			.setName('Twitter display name')
+			.setDesc('Display name shown on Twitter-like cards')
+			.addText(text => text
+				.setPlaceholder('Timeline user')
+				.setValue(ctx.plugin.data.settings.twitterDisplayName)
+				.onChange(async (value) => {
+					ctx.plugin.data.settings.twitterDisplayName = value.trim() || 'Timeline User';
+					await ctx.plugin.syncAndSave();
+					ctx.plugin.refreshAllViews();
+				}));
+
+		new Setting(ctx.containerEl)
+			.setName('Twitter handle')
+			.setDesc('Handle shown under display name')
+			.addText(text => text
+				.setPlaceholder('@timeline_user')
+				.setValue(ctx.plugin.data.settings.twitterHandle)
+				.onChange(async (value) => {
+					const next = value.trim();
+					ctx.plugin.data.settings.twitterHandle = next.length > 0 ? next : '@timeline_user';
+					await ctx.plugin.syncAndSave();
+					ctx.plugin.refreshAllViews();
+				}));
+
+		new Setting(ctx.containerEl)
+			.setName('Twitter avatar emoji')
+			.setDesc('Emoji shown as the profile avatar in Twitter-like mode')
+			.addText(text => text
+				.setPlaceholder('\\u{1F4DD}')
+				.setValue(ctx.plugin.data.settings.twitterAvatarEmoji)
+				.onChange(async (value) => {
+					ctx.plugin.data.settings.twitterAvatarEmoji = value.trim() || '\\u{1F4DD}';
+					await ctx.plugin.syncAndSave();
+					ctx.plugin.refreshAllViews();
+				}));
+
+		new Setting(ctx.containerEl)
+			.setName('Show SRS in actions')
+			.setDesc('Show SRS status chip in Twitter-like action row')
+			.addToggle(toggle => toggle
+				.setValue(ctx.plugin.data.settings.twitterShowSrsInActions)
+				.onChange(async (value) => {
+					ctx.plugin.data.settings.twitterShowSrsInActions = value;
+					await ctx.plugin.syncAndSave();
+					ctx.plugin.refreshAllViews();
+				}));
+
+		new Setting(ctx.containerEl)
+			.setName('Rail shortcut density')
+			.setDesc('Choose compact 6 buttons or full rail actions')
+			.addDropdown(dropdown => dropdown
+				.addOption('six', '6 shortcuts')
+				.addOption('full', 'Full shortcuts')
+				.setValue(ctx.plugin.data.settings.twitterRailDensity)
+				.onChange(async (value) => {
+					ctx.plugin.data.settings.twitterRailDensity = value as TwitterRailDensity;
+					await ctx.plugin.syncAndSave();
+					ctx.plugin.refreshAllViews();
+				}));
+
+		new Setting(ctx.containerEl)
+			.setName('Feather button action')
+			.setDesc('Action for the compose shortcut in Twitter-like mode')
+			.addDropdown(dropdown => dropdown
+				.addOption('quick-note-modal', 'Open quick note modal')
+				.addOption('create-empty-note', 'Create empty note')
+				.addOption('command-palette', 'Open command palette')
+				.setValue(ctx.plugin.data.settings.twitterFeatherAction)
+				.onChange(async (value) => {
+					ctx.plugin.data.settings.twitterFeatherAction = value as TwitterFeatherAction;
+					await ctx.plugin.syncAndSave();
+				}));
+	}
 
 	new Setting(ctx.containerEl)
 		.setName('Show metadata')

@@ -211,9 +211,19 @@
 .timeline-filter-types {
 	display: flex;
 	gap: 4px;
+	flex: 1 1 100%;
+	min-width: 0;
+	max-width: 100%;
+	flex-wrap: nowrap;
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: thin;
+	scrollbar-color: var(--background-modifier-border) transparent;
 }
 
 .timeline-filter-type-btn {
+	flex: 0 0 auto;
 	padding: 6px 8px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--timeline-radius-md);
@@ -1503,6 +1513,11 @@
 	max-height: 80px;
 }
 
+.timeline-modal-mobile-container .timeline-comment-pdf-preview-container {
+	height: 48vh;
+	min-height: 220px;
+}
+
 .timeline-modal-mobile-container .timeline-quote-note-preview-container {
 	max-height: 100px;
 }
@@ -1570,6 +1585,23 @@
 	word-wrap: break-word;
 	font-family: var(--font-monospace);
 	user-select: text;
+}
+
+.timeline-comment-pdf-preview-container {
+	height: min(60vh, 640px);
+	min-height: 260px;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--timeline-radius-md);
+	background: var(--background-primary);
+}
+
+.timeline-comment-pdf-preview {
+	display: block;
+	width: 100%;
+	height: 100%;
+	border: none;
+	background: var(--background-primary);
 }
 
 /* コメントモーダル: ファイル情報表示 */
@@ -2471,16 +2503,6 @@
 
 /* ===== PDF埋め込み表示 ===== */
 
-.timeline-container {
-	--timeline-pdf-fullscreen-height: 100vh;
-}
-
-@supports (height: 100dvh) {
-	.timeline-container {
-		--timeline-pdf-fullscreen-height: 100dvh;
-	}
-}
-
 /* リスト表示のPDF埋め込み */
 .timeline-card-pdf-embed {
 	position: relative;
@@ -2488,17 +2510,21 @@
 	border-radius: 6px;
 	overflow: auto;
 	background: var(--background-primary);
+	height: 600px;
+	min-height: 600px;
 }
 
 .timeline-pdf-embed-host {
 	width: 100%;
 	height: 100%;
 	display: block;
-	max-width: 100%;
-	min-width: 100%;
 }
 
-.timeline-card-pdf-embed .timeline-pdf-embed-host,
+.timeline-card-pdf-embed .timeline-pdf-embed-host {
+	flex: 1 0 100%;
+	align-self: stretch;
+}
+
 .timeline-grid-card-pdf-embed .timeline-pdf-embed-host {
 	flex: 1 0 100%;
 	align-self: stretch;
@@ -2516,23 +2542,11 @@
 .timeline-grid-card-pdf-embed .pdf-embed {
 	width: 100% !important;
 	max-width: 100% !important;
-	min-width: 100%;
-	margin-left: 0 !important;
-	margin-right: 0 !important;
+	height: 100%;
+	min-height: 100%;
 	display: block;
 	border: none;
 	background: var(--background-primary);
-}
-
-.timeline-card-pdf-embed .markdown-embed,
-.timeline-card-pdf-embed .markdown-embed-content,
-.timeline-grid-card-pdf-embed .markdown-embed,
-.timeline-grid-card-pdf-embed .markdown-embed-content {
-	width: 100% !important;
-	max-width: 100% !important;
-	min-width: 100%;
-	margin-left: 0 !important;
-	margin-right: 0 !important;
 }
 
 /* PDF オープンボタン */
@@ -2578,8 +2592,7 @@
 	z-index: 10;
 }
 
-.timeline-card-pdf-embed:hover .timeline-pdf-page-nav,
-.timeline-grid-card-pdf-embed:hover .timeline-pdf-page-nav {
+.timeline-card-pdf-embed:hover .timeline-pdf-page-nav {
 	opacity: 1;
 }
 
@@ -2610,76 +2623,29 @@
 	user-select: none;
 }
 
-/* PDFは常にフルサイズで表示 */
-.timeline-card-pdf-embed embed,
-.timeline-card-pdf-embed iframe,
-.timeline-card-pdf-embed object,
-.timeline-card-pdf-embed .internal-embed,
-.timeline-card-pdf-embed .pdf-embed {
-	height: 100%;
-	min-height: 100%;
-}
-
-.timeline-card.timeline-card-type-pdf .timeline-card-pdf-embed {
-	height: var(--timeline-pdf-fullscreen-height);
-	min-height: var(--timeline-pdf-fullscreen-height);
-}
-
 /* グリッド表示のPDF埋め込み */
 .timeline-grid-card-pdf-embed {
 	position: relative;
 	background: var(--background-primary);
 	overflow: auto;
-	aspect-ratio: 3/4;
-	min-height: 400px;
+	height: 600px;
+	min-height: 600px;
 }
 
+.timeline-mobile .timeline-card-pdf-embed,
+.timeline-mobile .timeline-grid-card-pdf-embed {
+	height: min(72vh, 720px);
+	min-height: 320px;
+}
+
+/* グリッド全幅表示 */
 .timeline-grid .timeline-grid-card.timeline-card-type-pdf {
 	grid-column: 1 / -1;
 }
 
-.timeline-grid .timeline-grid-card.timeline-card-type-pdf .timeline-grid-card-thumbnail.timeline-grid-card-pdf-embed {
-	height: var(--timeline-pdf-fullscreen-height);
-	min-height: var(--timeline-pdf-fullscreen-height);
-	aspect-ratio: auto;
-}
-
-.timeline-grid-card-pdf-embed .timeline-pdf-open-btn {
-	top: 8px;
-	right: 8px;
-}
-
-.timeline-grid-card-pdf-embed:hover .timeline-pdf-open-btn {
-	opacity: 1;
-}
-
-.timeline-grid-card-pdf-embed embed,
-.timeline-grid-card-pdf-embed iframe,
-.timeline-grid-card-pdf-embed object,
-.timeline-grid-card-pdf-embed .internal-embed,
-.timeline-grid-card-pdf-embed .pdf-embed {
-	height: 100%;
-	min-height: 100%;
-}
-
-/* モバイル向けPDF調整 - フルサイズ維持 */
-.timeline-mobile .timeline-card-pdf-embed embed,
-.timeline-mobile .timeline-card-pdf-embed iframe,
-.timeline-mobile .timeline-card-pdf-embed object,
-.timeline-mobile .timeline-card-pdf-embed .internal-embed,
-.timeline-mobile .timeline-card-pdf-embed .pdf-embed {
-	height: 100%;
-	min-height: 100%;
-}
-
-.timeline-mobile .timeline-grid-card-pdf-embed {
-	aspect-ratio: auto;
-	min-height: var(--timeline-pdf-fullscreen-height);
-}
-
 /* PDF描画失敗時のフォールバック表示 */
 .timeline-pdf-fallback {
-	display: none;
+	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
@@ -2690,22 +2656,8 @@
 	padding: 16px;
 	background: var(--background-secondary);
 	border-radius: 6px;
-	color: var(--text-muted);
 	text-align: center;
 	box-sizing: border-box;
-}
-
-.timeline-pdf-fallback-visible {
-	display: flex;
-}
-
-.timeline-card-pdf-embed .timeline-pdf-fallback {
-	min-height: 280px;
-}
-
-.timeline-grid-card-pdf-embed .timeline-pdf-fallback {
-	min-height: 320px;
-	border-radius: 0;
 }
 
 .timeline-pdf-fallback-icon {
@@ -2718,7 +2670,6 @@
 	font-weight: 500;
 	color: var(--text-normal);
 	max-width: 80%;
-	text-align: center;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -2729,12 +2680,10 @@
 	color: var(--text-faint);
 }
 
-.timeline-pdf-has-fallback .timeline-pdf-open-btn {
-	opacity: 1;
-}
-
+/* タッチデバイスではボタンを常時表示 */
 @media (hover: none) {
-	.timeline-pdf-open-btn {
+	.timeline-pdf-open-btn,
+	.timeline-pdf-page-nav {
 		opacity: 1;
 	}
 }
@@ -4033,4 +3982,365 @@
 	display: flex;
 	justify-content: flex-end;
 	gap: 8px;
+}
+
+/* ===== Twitter-like v2 ===== */
+
+.timeline-ui-twitter.timeline-twitter-v2 {
+	padding: 8px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-compose-box,
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-view-mode-btn {
+	display: none;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-shell {
+	display: grid;
+	grid-template-columns: 72px minmax(0, 1fr);
+	gap: 12px;
+	align-items: start;
+	max-width: 1200px;
+	margin: 0 auto;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-rail {
+	position: sticky;
+	top: 8px;
+	align-self: start;
+	padding: 6px 0;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-rail-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	align-items: center;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-shortcut-btn {
+	width: 44px;
+	height: 44px;
+	border-radius: 999px;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--text-normal);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-shortcut-btn .svg-icon {
+	width: 18px;
+	height: 18px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-shortcut-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-shortcut-btn.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	background: var(--background-secondary);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-main {
+	min-width: 0;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-main-header {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 16px;
+	margin-bottom: 10px;
+	padding: 10px 14px;
+	background: var(--background-primary);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-filter-drawer {
+	overflow: hidden;
+	max-height: 0;
+	opacity: 0;
+	pointer-events: none;
+	transition: max-height 0.2s ease, opacity 0.2s ease, margin-bottom 0.2s ease;
+	margin-bottom: 0;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-filter-drawer.is-open {
+	max-height: 420px;
+	opacity: 1;
+	pointer-events: auto;
+	margin-bottom: 10px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-filter-drawer-inner .timeline-filter-bar {
+	margin-bottom: 0;
+	border-radius: 14px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-list {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 16px;
+	overflow: hidden;
+	background: var(--background-primary);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-card {
+	padding: 14px 16px;
+	border-radius: 0;
+	margin: 0;
+	border: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-card:last-child {
+	border-bottom: none;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 8px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-avatar {
+	width: 40px;
+	height: 40px;
+	border-radius: 999px;
+	background: var(--background-secondary);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 20px;
+	flex: 0 0 auto;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-user {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-display-name {
+	font-weight: 700;
+	color: var(--text-normal);
+	line-height: 1.1;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-handle {
+	font-size: 12px;
+	color: var(--text-muted);
+	line-height: 1.1;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-date {
+	margin-left: auto;
+	font-size: 12px;
+	color: var(--text-faint);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-preview {
+	font-size: 15px;
+	line-height: 1.55;
+	color: var(--text-normal);
+	margin-bottom: 10px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-media {
+	margin-bottom: 10px;
+	border-radius: 14px;
+	overflow: hidden;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-media img {
+	display: block;
+	width: 100%;
+	max-height: 420px;
+	object-fit: cover;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-helper {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-bottom: 8px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-helper-title {
+	font-size: 13px;
+	color: var(--text-normal);
+	font-weight: 600;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-helper-path {
+	font-size: 12px;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding-top: 8px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 7px 10px;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--text-muted);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action .timeline-action-label {
+	font-size: 12px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action-icon .svg-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action.is-bookmarked {
+	color: var(--text-warning);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-srs-chip {
+	margin-left: auto;
+	font-size: 12px;
+	padding: 4px 10px;
+	border-radius: 999px;
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-footer {
+	padding: 20px 12px 28px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-bottom-bar {
+	display: none;
+}
+
+.timeline-quick-note-modal h3 {
+	margin: 0 0 10px;
+}
+
+.timeline-quick-note-input {
+	width: 100%;
+	min-height: 160px;
+	resize: vertical;
+	padding: 10px 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 10px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font: inherit;
+}
+
+.timeline-quick-note-actions {
+	margin-top: 10px;
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2.timeline-mobile .timeline-twitter-shell {
+	display: block;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2.timeline-mobile .timeline-twitter-rail {
+	display: none;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2.timeline-mobile .timeline-twitter-main {
+	padding-bottom: 82px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2.timeline-mobile .timeline-twitter-bottom-bar {
+	position: fixed;
+	left: 50%;
+	bottom: 10px;
+	transform: translateX(-50%);
+	width: min(560px, calc(100% - 16px));
+	padding: 8px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 16px;
+	background: var(--background-primary);
+	background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+	display: block;
+	z-index: 30;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2.timeline-mobile .timeline-twitter-bottom-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 4px;
+	overflow-x: auto;
+}
+
+@media (max-width: 900px) {
+	.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-shell {
+		display: block;
+	}
+
+	.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-rail {
+		display: none;
+	}
+
+	.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-main {
+		padding-bottom: 82px;
+	}
+
+	.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-bottom-bar {
+		position: fixed;
+		left: 50%;
+		bottom: 10px;
+		transform: translateX(-50%);
+		width: min(560px, calc(100% - 16px));
+		padding: 8px 10px;
+		border: 1px solid var(--background-modifier-border);
+		border-radius: 16px;
+		background: var(--background-primary);
+		background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+		backdrop-filter: blur(12px);
+		-webkit-backdrop-filter: blur(12px);
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+		display: block;
+		z-index: 30;
+	}
+
+	.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-bottom-actions {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 4px;
+		overflow-x: auto;
+	}
 }

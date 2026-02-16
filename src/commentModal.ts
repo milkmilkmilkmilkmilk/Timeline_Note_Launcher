@@ -53,6 +53,30 @@ export class CommentModal extends Modal {
 				cls: 'timeline-comment-preview',
 			});
 			previewEl.textContent = this.noteContent;
+		} else if (this.fileType === 'pdf') {
+			// PDF: 本文を埋め込み表示して、コメント入力時に参照しやすくする
+			previewSection.createEl('label', {
+				text: 'PDFの内容',
+				cls: 'timeline-comment-label',
+			});
+			const previewContainer = previewSection.createDiv({ cls: 'timeline-comment-pdf-preview-container' });
+			const resourcePath = this.app.vault.getResourcePath(this.file);
+			const [base, hash = ''] = resourcePath.split('#', 2);
+			const params = new URLSearchParams(hash);
+			params.set('page', '1');
+			const src = `${base}#${params.toString()}`;
+			previewContainer.createEl('iframe', {
+				cls: 'timeline-comment-pdf-preview',
+				attr: {
+					src,
+					title: `PDF preview: ${this.file.name}`,
+					loading: 'lazy',
+				},
+			});
+			previewSection.createDiv({
+				cls: 'timeline-comment-file-info-note',
+				text: 'コメントはコンパニオンノートに保存されます',
+			});
 		} else {
 			// バイナリファイル: ファイル情報を表示
 			previewSection.createEl('label', {

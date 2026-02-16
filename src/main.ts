@@ -25,12 +25,12 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	private backlinkIndexCache: { index: BacklinkIndex; timestamp: number } | null = null;
 	private static readonly BACKLINK_CACHE_TTL = 300_000;
 	private targetFilesCache: { files: TFile[]; settingsKey: string; timestamp: number } | null = null;
-	private static readonly TARGET_FILES_CACHE_TTL = 30_000;
+	private static readonly TARGET_FILES_CACHE_TTL = 300_000; // 30秒→5分に延長してキャッシュヒット率を向上
 	private timelineCardsCache: { cards: TimelineCard[]; newCount: number; dueCount: number; timestamp: number } | null = null;
 	private static readonly TIMELINE_CACHE_TTL = 300_000;
 	private lastReloadFromDiskAt: number = 0;
 	private static readonly RELOAD_FROM_DISK_DEBOUNCE_MS = 1_500;
-	private static readonly CREATE_CARD_CONCURRENCY = 16;
+	private static readonly CREATE_CARD_CONCURRENCY = 32; // 16→32に増やして並列処理を高速化
 	private saveQueueDepth: number = 0;
 	private reloadAfterQueueScheduled: boolean = false;
 	// 評価取り消し用スナップショット（セッション限り）
@@ -73,16 +73,22 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		// 設定タブ
 		this.addSettingTab(new TimelineSettingTab(this.app, this));
 
-		// ファイル変更時に重い派生キャッシュを無効化
-		const invalidateDerivedCaches = (): void => {
+		// ファイル変更時のキャッシュ無効化戦略を最適化
+		// create/delete/rename: 構造的変更なので targetFiles キャッシュのみクリア
+		const invalidateStructuralCaches = (): void => {
 			this.backlinkIndexCache = null;
 			this.invalidateTargetFilesCache();
-			this.invalidateTimelineCache();
+			// timelineCardsCache は TTL に任せる（即座にクリアしない）
 		};
-		this.registerEvent(this.app.vault.on('create', invalidateDerivedCaches));
-		this.registerEvent(this.app.vault.on('delete', invalidateDerivedCaches));
-		this.registerEvent(this.app.vault.on('rename', invalidateDerivedCaches));
-		this.registerEvent(this.app.vault.on('modify', invalidateDerivedCaches));
+		// modify: バックリンクインデックスのみクリア（リンク変更検出のため）
+		const invalidateContentCaches = (): void => {
+			this.backlinkIndexCache = null;
+			// targetFilesCache と timelineCardsCache は TTL に任せる
+		};
+		this.registerEvent(this.app.vault.on('create', invalidateStructuralCaches));
+		this.registerEvent(this.app.vault.on('delete', invalidateStructuralCaches));
+		this.registerEvent(this.app.vault.on('rename', invalidateStructuralCaches));
+		this.registerEvent(this.app.vault.on('modify', invalidateContentCaches));
 
 		// visibilitychange リスナー（アプリ復帰時にリモート変更を取り込む）
 		this.registerDomEvent(document, 'visibilitychange', () => {
@@ -148,6 +154,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			DEFAULT_DATA.settings,
 			loaded?.settings
 		);
+		const normalizedTwitterSettings = this.normalizeTwitterSettings();
 
 		// 日次統計の初期化
 		if (!this.data.dailyStats) {
@@ -176,6 +183,88 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 
 		// データ移行
 		await this.migrateData(loaded?.engineVersion ?? 1);
+
+		// 文字化けや不正値を補正した設定を永続化
+		if (normalizedTwitterSettings) {
+			await this.saveData(this.data);
+		}
+	}
+
+	private normalizeTwitterSettings(): boolean {
+		const settings = this.data.settings;
+		let changed = false;
+
+		const normalizeTextSetting = (value: unknown, fallback: string, maxLength: number): string => {
+			if (typeof value !== 'string') {
+				return fallback;
+			}
+			const trimmed = value.trim();
+			if (trimmed.length === 0) {
+				return fallback;
+			}
+			return trimmed.length > maxLength ? trimmed.slice(0, maxLength) : trimmed;
+		};
+
+		const nextDisplayName = normalizeTextSetting(settings.twitterDisplayName, 'Timeline User', 64);
+		if (settings.twitterDisplayName !== nextDisplayName) {
+			settings.twitterDisplayName = nextDisplayName;
+			changed = true;
+		}
+
+		const nextHandleBase = normalizeTextSetting(settings.twitterHandle, '@timeline_user', 64).replace(/\s+/g, '');
+		const nextHandleCore = nextHandleBase.replace(/^@+/, '');
+		const nextHandle = nextHandleCore.length > 0 ? `@${nextHandleCore}` : '@timeline_user';
+		if (settings.twitterHandle !== nextHandle) {
+			settings.twitterHandle = nextHandle;
+			changed = true;
+		}
+
+		const nextAvatar = this.normalizeTwitterAvatarEmoji(settings.twitterAvatarEmoji);
+		if (settings.twitterAvatarEmoji !== nextAvatar) {
+			settings.twitterAvatarEmoji = nextAvatar;
+			changed = true;
+		}
+
+		const allowedRailDensity = new Set(['six', 'full']);
+		if (!allowedRailDensity.has(settings.twitterRailDensity)) {
+			settings.twitterRailDensity = 'six';
+			changed = true;
+		}
+
+		const allowedFeatherAction = new Set(['quick-note-modal', 'create-empty-note', 'command-palette']);
+		if (!allowedFeatherAction.has(settings.twitterFeatherAction)) {
+			settings.twitterFeatherAction = 'quick-note-modal';
+			changed = true;
+		}
+
+		if (typeof settings.twitterShowSrsInActions !== 'boolean') {
+			settings.twitterShowSrsInActions = true;
+			changed = true;
+		}
+
+		return changed;
+	}
+
+	private normalizeTwitterAvatarEmoji(value: unknown): string {
+		if (typeof value !== 'string') {
+			return '\u{1F4DD}';
+		}
+		const trimmed = value.trim();
+		if (trimmed.length === 0) {
+			return '\u{1F4DD}';
+		}
+		if (/\s/.test(trimmed)) {
+			return '\u{1F4DD}';
+		}
+		const codePoints = Array.from(trimmed);
+		if (codePoints.length > 8) {
+			return '\u{1F4DD}';
+		}
+		const emojiLikePattern = /[\p{Extended_Pictographic}\p{Regional_Indicator}]/u;
+		if (!emojiLikePattern.test(trimmed)) {
+			return '\u{1F4DD}';
+		}
+		return trimmed;
 	}
 
 	/**
@@ -251,6 +340,12 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	 * タイムラインカードを取得（2フェーズパイプライン）
 	 */
 	async getTimelineCards(): Promise<{ cards: TimelineCard[]; newCount: number; dueCount: number }> {
+		// キャッシュが有効ならすぐに返す（パフォーマンス最適化）
+		const cached = this.getCachedTimelineCards();
+		if (cached) {
+			return cached;
+		}
+
 		// リフレッシュ時に最新データを取り込む
 		await this.reloadFromDisk();
 
@@ -314,6 +409,26 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			timestamp: Date.now(),
 		};
 		return timelineResult;
+	}
+
+	/**
+	 * 最新の new / due 件数のみを軽量に再集計する
+	 * カード本体キャッシュや createTimelineCard は使わない
+	 */
+	async getLatestNewDueCounts(): Promise<{ newCount: number; dueCount: number }> {
+		await this.reloadFromDisk();
+
+		const targetFiles = this.getTargetFiles();
+		let newCount = 0;
+		let dueCount = 0;
+
+		for (const file of targetFiles) {
+			const candidate = createCandidateCard(this.app, file, this.data.reviewLogs[file.path], this.data.settings);
+			if (candidate.isNew) newCount++;
+			if (candidate.isDue) dueCount++;
+		}
+
+		return { newCount, dueCount };
 	}
 
 	private getTargetFiles(): TFile[] {

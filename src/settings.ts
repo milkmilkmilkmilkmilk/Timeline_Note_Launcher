@@ -154,7 +154,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 		// ストリーク表示
 		if (stats.currentStreak > 0) {
 			const streakEl = dashboard.createDiv({ cls: 'timeline-stats-streak' });
-			streakEl.createSpan({ cls: 'timeline-streak-icon', text: '櫨' });
+			streakEl.createSpan({ cls: 'timeline-streak-icon', text: '🔥' });
 			streakEl.createSpan({ cls: 'timeline-streak-count', text: `${stats.currentStreak}` });
 			streakEl.createSpan({ text: ' day streak!' });
 		}
@@ -233,12 +233,12 @@ export class TimelineSettingTab extends PluginSettingTab {
 		const grid = container.createDiv({ cls: 'timeline-stats-type-grid' });
 
 		const types: { key: string; icon: string; label: string }[] = [
-			{ key: 'markdown', icon: '統', label: 'Markdown' },
-			{ key: 'text', icon: '塔', label: 'Text' },
+			{ key: 'markdown', icon: '📝', label: 'Markdown' },
+			{ key: 'text', icon: '📄', label: 'Text' },
 			{ key: 'image', icon: 'IMG', label: 'Image' },
-			{ key: 'pdf', icon: '塘', label: 'PDF' },
-			{ key: 'audio', icon: '七', label: 'Audio' },
-			{ key: 'video', icon: '汐', label: 'Video' },
+			{ key: 'pdf', icon: '📕', label: 'PDF' },
+			{ key: 'audio', icon: '🎵', label: 'Audio' },
+			{ key: 'video', icon: '🎬', label: 'Video' },
 			{ key: 'excalidraw', icon: '🎨', label: 'Excalidraw' },
 			{ key: 'canvas', icon: '🔲', label: 'Canvas' },
 		];

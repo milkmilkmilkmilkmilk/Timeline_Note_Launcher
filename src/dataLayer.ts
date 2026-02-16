@@ -588,7 +588,7 @@ export async function createTimelineCard(
 			firstImagePath = file.path;  // 画像ファイル自身をサムネイルとして使用
 			break;
 		case 'pdf':
-			preview = `📄 PDF document`;
+			preview = `📄 ${file.basename}.${file.extension}`;
 			firstImagePath = file.path;  // PDF埋め込み表示用
 			break;
 		case 'audio':

@@ -1,4 +1,4 @@
-// Timeline Note Launcher - Type Definitions
+﻿// Timeline Note Launcher - Type Definitions
 
 /** 選択モード */
 export type SelectionMode = 'random' | 'age-priority' | 'srs';
@@ -17,6 +17,12 @@ export type ColorTheme = 'default' | 'blue' | 'green' | 'purple' | 'orange' | 'p
 
 /** UIテーマ */
 export type UITheme = 'classic' | 'twitter';
+
+/** Twitter風UIのレール密度 */
+export type TwitterRailDensity = 'six' | 'full';
+
+/** Twitter風UIのFeatherボタン動作 */
+export type TwitterFeatherAction = 'quick-note-modal' | 'create-empty-note' | 'command-palette';
 
 /** 難易度評価 */
 export type DifficultyRating = 'again' | 'hard' | 'good' | 'easy';
@@ -68,6 +74,12 @@ export interface PluginSettings {
 	previewLines: number;      // previewMode が 'lines' の時のみ使用
 	colorTheme: ColorTheme;    // カラーテーマ
 	uiTheme: UITheme;          // UIテーマ
+	twitterDisplayName: string;
+	twitterHandle: string;
+	twitterAvatarEmoji: string;
+	twitterShowSrsInActions: boolean;
+	twitterRailDensity: TwitterRailDensity;
+	twitterFeatherAction: TwitterFeatherAction;
 	showMeta: boolean;
 	enableSplitView: boolean;  // Desktop only
 	showDifficultyButtons: boolean;  // 難易度ボタンを表示
@@ -302,6 +314,12 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	previewLines: 3,
 	colorTheme: 'default',
 	uiTheme: 'classic',
+	twitterDisplayName: 'Timeline User',
+	twitterHandle: '@timeline_user',
+	twitterAvatarEmoji: '\u{1F4DD}',
+	twitterShowSrsInActions: true,
+	twitterRailDensity: 'six',
+	twitterFeatherAction: 'quick-note-modal',
 	showMeta: true,
 	enableSplitView: false,
 	showDifficultyButtons: true,

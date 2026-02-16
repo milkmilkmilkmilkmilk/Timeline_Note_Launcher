@@ -23,6 +23,7 @@ export interface KeyboardNavContext {
 	createDifficultyButtons(container: HTMLElement, card: TimelineCard): void;
 	replaceWithUndoButton(container: HTMLElement, card: TimelineCard): void;
 	toggleBookmark(path: string): boolean;
+	applySrsCountDelta(deltaNew: number, deltaDue: number): void;
 	refresh(): Promise<void>;
 }
 
@@ -200,6 +201,7 @@ async function rateFocusedCard(ctx: KeyboardNavContext, rating: DifficultyRating
 	if (!card) return;
 
 	await ctx.plugin.rateCard(card.path, rating);
+	ctx.applySrsCountDelta(card.isNew ? -1 : 0, card.isDue ? -1 : 0);
 	const cardEl = ctx.cardElements[ctx.focusedIndex];
 	if (cardEl) {
 		cardEl.addClass('timeline-card-reviewed');
@@ -228,6 +230,7 @@ async function undoFocusedCard(ctx: KeyboardNavContext): Promise<void> {
 
 	const success = await ctx.plugin.undoRating(card.path);
 	if (!success) return;
+	ctx.applySrsCountDelta(card.isNew ? 1 : 0, card.isDue ? 1 : 0);
 
 	const cardEl = ctx.cardElements[ctx.focusedIndex];
 	if (cardEl) {
