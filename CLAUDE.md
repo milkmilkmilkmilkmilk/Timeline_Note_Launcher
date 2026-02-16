@@ -55,6 +55,10 @@ src/
 ├── selectionEngine.ts # Card selection/sorting algorithms (random, age-priority, srs)
 ├── srsEngine.ts       # SM-2 spaced repetition algorithm implementation
 ├── settings.ts        # Settings tab UI with statistics dashboard
+├── settingSections.ts # Modular settings section builders (extracted from settings.ts)
+├── statistics.ts      # Review statistics and history logic (extracted from dataLayer.ts)
+├── noteAnnotation.ts  # Note annotation logic (extracted from dataLayer.ts)
+├── timelineViewUtils.ts # Utility functions (extracted from timelineView.ts)
 └── dataMerge.ts       # Conflict resolution for concurrent data.json saves
 ```
 
@@ -63,7 +67,7 @@ src/
 Rendering logic has been extracted from `timelineView.ts` into specialized modules:
 
 - `cardRenderer.ts`: Card DOM generation, action buttons, context menus
-- `embedRenderers.ts`: Excalidraw, Canvas, PDF embeds (deferred activation)
+- `embedRenderers.ts`: Excalidraw, Canvas, PDF embeds (deferred activation via iframe with `navpanes=0`)
 - `contentPreview.ts`: Markdown preview rendering with line limits
 - `notebookParser.ts`: Jupyter notebook (.ipynb) parsing and rendering
 
@@ -73,6 +77,7 @@ Rendering logic has been extracted from `timelineView.ts` into specialized modul
 - `keyboardNav.ts`: Keyboard shortcut handling (j/k navigation, rating hotkeys)
 - `pullToRefresh.ts`: Mobile pull-to-refresh gesture
 - `commentModal.ts`, `quoteNoteModal.ts`, `linkNoteModal.ts`: Note annotation modals
+- `quickNoteModal.ts`: Compose and create new notes from the timeline
 - `textInputModal.ts`: Generic text input modal base class
 
 ### Data Flow (Two-Phase Card Pipeline)
@@ -96,9 +101,8 @@ Selection operates on lightweight candidates to avoid unnecessary file I/O:
 - **Deferred embeds**: PDF/Excalidraw/Canvas embeds are created as placeholders, activated only when DOM-connected
 - **Caching layers** (see `main.ts`):
   - Backlink index: 300s TTL (5 minutes)
-  - Target files: 30s TTL
-  - Timeline cards: 15s TTL
-  - Bookmarked paths: 5s TTL
+  - Target files: 300s TTL (5 minutes)
+  - Timeline cards: 300s TTL (5 minutes)
 
 ### Plugin Data Structure
 
@@ -126,7 +130,7 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 - `Platform.isMobile` for mobile-specific behavior; `mobileViewOnDesktop` setting enables mobile layout on desktop for testing
 - TypeScript strict mode: `noImplicitAny`, `strictNullChecks`, `noUncheckedIndexedAccess` all enabled
 - When adding new settings: update `PluginSettings` interface, `DEFAULT_SETTINGS`, and settings UI in `settings.ts`
-- PDF files: Always use iframe rendering with `navpanes=0` to hide thumbnail sidebar; 600px height with page navigation
+- PDF files: Rendered via iframe in `embedRenderers.ts` with `navpanes=0` to hide thumbnail sidebar
 - Source comments are in Japanese; maintain this convention
 - This is a TypeScript-only codebase; do not create JavaScript files
 - ESLint uses flat config (`eslint.config.mts`) with `eslint-plugin-obsidianmd` and `@eslint-community/eslint-plugin-eslint-comments`
@@ -136,7 +140,7 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
   - Format: `// eslint-disable-next-line rule-name -- reason`
 - Modal patterns: all modals accept a `plugin` reference (typed as `import type` from `main`), store drafts in plugin data, and support keyboard shortcuts (Ctrl+Enter to confirm)
 - Link generation uses `app.fileManager.generateMarkdownLink()` to respect the user's wikilink vs markdown link preference
-- **Modular architecture**: When adding features, prefer creating new focused modules over expanding existing files. For example, rendering logic was extracted from `timelineView.ts` into `cardRenderer.ts`, `embedRenderers.ts`, `pdfRenderer.ts` to improve maintainability
+- **Modular architecture**: When adding features, prefer creating new focused modules over expanding existing files. For example, rendering logic was extracted from `timelineView.ts` into `cardRenderer.ts`, `embedRenderers.ts`; settings UI into `settingSections.ts`; data logic into `statistics.ts`, `noteAnnotation.ts`
 - **Claude Code interaction guidelines**:
   - On removal/deletion requests: Take direct action without over-clarification (user intent is clear)
   - CLAUDE.md updates: Make incremental additions; avoid full-file rewrites unless restructuring is genuinely needed
