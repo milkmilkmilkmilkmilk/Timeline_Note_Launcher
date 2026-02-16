@@ -1,19 +1,32 @@
 // Timeline Note Launcher - Embed Renderers
 // timelineView.ts から抽出されたExcalidraw, Canvas, Office埋め込みレンダラー
-import { MarkdownRenderer, TFile } from 'obsidian';
+import { MarkdownRenderer, TFile, setIcon } from 'obsidian';
+import type { App, Component } from 'obsidian';
 import type { TimelineCard } from './types';
-import type { EmbedRenderContext } from './pdfRenderer';
-import { hasVisibleSize, renderPdfCardPreview } from './pdfRenderer';
 
-// re-export: EmbedRenderContext を embedRenderers 経由でもアクセス可能に
-export type { EmbedRenderContext } from './pdfRenderer';
+/**
+ * 埋め込みレンダリング用コンテキスト
+ */
+export interface EmbedRenderContext {
+	app: App;
+	renderComponent: Component;
+	openNote: (card: TimelineCard) => Promise<void>;
+}
+
+/**
+ * 要素が可視サイズを持っているか判定
+ */
+export function hasVisibleSize(element: HTMLElement): boolean {
+	const rect = element.getBoundingClientRect();
+	return rect.width > 0 && rect.height > 0;
+}
 
 /**
  * DOM接続済みの埋め込みプレースホルダーに対してレンダリングを実行
  */
 export async function activatePendingEmbeds(
 	ctx: EmbedRenderContext,
-	pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: string }>,
+	pendingEmbeds: Map<HTMLElement, { card: TimelineCard; isGridMode: boolean; embedType: 'excalidraw' | 'canvas' | 'pdf' }>,
 	maxItems: number = Number.POSITIVE_INFINITY,
 	parallel: boolean = false
 ): Promise<void> {
@@ -28,7 +41,7 @@ export async function activatePendingEmbeds(
 	}
 	const renderEmbed = async (
 		container: HTMLElement,
-		payload: { card: TimelineCard; isGridMode: boolean; embedType: string }
+		payload: { card: TimelineCard; isGridMode: boolean; embedType: 'excalidraw' | 'canvas' | 'pdf' }
 	): Promise<void> => {
 		if (!container.isConnected) return;
 		const { card, isGridMode, embedType } = payload;
@@ -36,7 +49,7 @@ export async function activatePendingEmbeds(
 			await renderExcalidrawCardPreview(ctx, container, card, isGridMode);
 		} else if (embedType === 'canvas') {
 			await renderCanvasCardPreview(ctx, container, card, isGridMode);
-		} else {
+		} else if (embedType === 'pdf') {
 			await renderPdfCardPreview(ctx, container, card, isGridMode);
 		}
 	};
@@ -353,4 +366,181 @@ function createOfficeOpenButton(ctx: EmbedRenderContext, container: HTMLElement,
 		e.stopPropagation();
 		void ctx.openNote(card);
 	});
+}
+
+// ===== PDF =====
+
+/**
+ * PDFカードプレビューを描画（desktop/mobile共通で本文表示を優先）
+ */
+export async function renderPdfCardPreview(
+	ctx: EmbedRenderContext,
+	container: HTMLElement,
+	card: TimelineCard,
+	_isGridMode: boolean
+): Promise<void> {
+	container.addEventListener('click', (e) => {
+		e.stopPropagation();
+	});
+
+	const rendered = await renderPdfEmbedAtPage(ctx, container, card, 1);
+	if (!rendered) {
+		console.warn('Failed to render PDF preview in timeline:', card.path);
+		return;
+	}
+
+	if (!container.querySelector('.timeline-pdf-page-nav')) {
+		createPdfPageNav(ctx, container, card);
+	}
+}
+
+/**
+ * 指定ページのPDF埋め込みを描画（Markdown埋め込み → ネイティブiframe の順に試行）
+ * 成功時のみ既存埋め込みを置換し、失敗時は既存表示を維持する。
+ */
+async function renderPdfEmbedAtPage(
+	ctx: EmbedRenderContext,
+	container: HTMLElement,
+	card: TimelineCard,
+	page: number
+): Promise<boolean> {
+	const pdfFile = getPdfFileFromCard(ctx, card);
+	if (!pdfFile) {
+		return false;
+	}
+
+	const currentHost = container.querySelector('.timeline-pdf-embed-host');
+	const navEl = container.querySelector('.timeline-pdf-page-nav');
+	const nextHost = container.createDiv({ cls: 'timeline-pdf-embed-host' });
+	if (navEl) {
+		container.insertBefore(nextHost, navEl);
+	}
+
+	// Markdown埋め込みをスキップし、常にiframe（navpanes=0対応）を使用
+	const rendered = await renderPdfViaNativeIframe(ctx, pdfFile, nextHost, page);
+
+	if (!rendered) {
+		nextHost.remove();
+		return false;
+	}
+
+	if (currentHost && currentHost !== nextHost) {
+		currentHost.remove();
+	}
+	container.dataset.pdfCurrentPage = String(page);
+	return true;
+}
+
+function getPdfFileFromCard(ctx: EmbedRenderContext, card: TimelineCard): TFile | null {
+	const pdfPath = card.firstImagePath;
+	if (!pdfPath) return null;
+	const file = ctx.app.vault.getAbstractFileByPath(pdfPath);
+	return file instanceof TFile ? file : null;
+}
+
+async function renderPdfViaNativeIframe(
+	ctx: EmbedRenderContext,
+	pdfFile: TFile,
+	host: HTMLElement,
+	page: number
+): Promise<boolean> {
+	const resourcePath = ctx.app.vault.getResourcePath(pdfFile);
+	const src = buildPdfResourceSrc(resourcePath, page);
+	const frame = host.createEl('iframe', {
+		cls: 'timeline-pdf-native-frame',
+		attr: {
+			src,
+			title: `PDF preview: ${pdfFile.basename}`,
+			loading: 'lazy',
+		},
+	});
+	return waitForPdfFrame(frame);
+}
+
+function buildPdfResourceSrc(resourcePath: string, page: number): string {
+	const safePage = String(Math.max(1, page));
+	const [base, hash = ''] = resourcePath.split('#', 2);
+	const params = new URLSearchParams(hash);
+	params.set('page', safePage);
+	params.set('navpanes', '0');  // サムネイルペインを非表示
+	return `${base}#${params.toString()}`;
+}
+
+async function waitForPdfFrame(frame: HTMLIFrameElement): Promise<boolean> {
+	return new Promise<boolean>((resolve) => {
+		let settled = false;
+		const finish = (ok: boolean): void => {
+			if (settled) return;
+			settled = true;
+			resolve(ok);
+		};
+
+		const timeoutId = window.setTimeout(() => {
+			finish(true);
+		}, 2500);
+
+		frame.addEventListener('load', () => {
+			window.clearTimeout(timeoutId);
+			finish(true);
+		}, { once: true });
+
+		frame.addEventListener('error', () => {
+			window.clearTimeout(timeoutId);
+			finish(false);
+		}, { once: true });
+	});
+}
+
+/**
+ * PDFページナビゲーションを作成
+ */
+function createPdfPageNav(
+	ctx: EmbedRenderContext,
+	container: HTMLElement,
+	card: TimelineCard
+): void {
+	const nav = container.createDiv({ cls: 'timeline-pdf-page-nav' });
+	container.dataset.pdfCurrentPage = '1';
+
+	const prevBtn = nav.createEl('button', { cls: 'timeline-pdf-page-btn' });
+	setIcon(prevBtn, 'chevron-left');
+	prevBtn.ariaLabel = 'Previous page';
+
+	const indicator = nav.createDiv({ cls: 'timeline-pdf-page-indicator', text: 'Page 1' });
+
+	const nextBtn = nav.createEl('button', { cls: 'timeline-pdf-page-btn' });
+	setIcon(nextBtn, 'chevron-right');
+	nextBtn.ariaLabel = 'Next page';
+
+	prevBtn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		const current = parseInt(container.dataset.pdfCurrentPage ?? '1', 10);
+		if (current <= 1) return;
+		void navigatePdfPage(ctx, container, card, current - 1, indicator);
+	});
+
+	nextBtn.addEventListener('click', (e) => {
+		e.stopPropagation();
+		const current = parseInt(container.dataset.pdfCurrentPage ?? '1', 10);
+		void navigatePdfPage(ctx, container, card, current + 1, indicator);
+	});
+}
+
+/**
+ * PDFページを指定ページに移動
+ */
+async function navigatePdfPage(
+	ctx: EmbedRenderContext,
+	container: HTMLElement,
+	card: TimelineCard,
+	page: number,
+	indicator: HTMLElement
+): Promise<void> {
+	const renderedOk = await renderPdfEmbedAtPage(ctx, container, card, page);
+	if (renderedOk) {
+		container.dataset.pdfCurrentPage = String(page);
+		indicator.textContent = `Page ${page}`;
+	} else {
+		console.warn('Failed to navigate PDF page:', card.path, page);
+	}
 }

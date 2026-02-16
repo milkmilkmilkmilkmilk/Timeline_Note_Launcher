@@ -19,6 +19,29 @@ CI runs `npm run build` and `npm run lint` on Node 20.x and 22.x (`.github/workf
 
 **Before committing**: Always run `npm run lint` to catch unused imports, type mismatches, and ESLint rule violations early.
 
+### Running builds in Claude Code environment
+
+Claude Code's Git Bash environment may not have Node.js in PATH by default. Use the provided wrapper scripts:
+
+```bash
+./build.sh              # Run production build (auto-detects Node.js)
+./npm.sh <command>      # Run any npm command (e.g., ./npm.sh run dev, ./npm.sh run lint)
+```
+
+These scripts automatically add Node.js to PATH if installed in the default Windows location (`C:\Program Files\nodejs`).
+
+### Development Workflow Tools
+
+**Git Hooks:**
+- Pre-commit hook (`.claude/hooks/pre-commit`): Runs `npm run lint` before commits
+  - Install: `cp .claude/hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit`
+  - Bypass: `git commit --no-verify` (use sparingly)
+
+**Claude Skills (shortcuts for common workflows):**
+- `/lint-fix` - Run ESLint with `--fix` to auto-correct common issues
+- `/build-validate` - Full CI validation locally (build + lint, matches .github/workflows/lint.yml)
+- `/check-types` - Fast TypeScript type-check only (no build output)
+
 ## Architecture
 
 ### Core Files
@@ -40,8 +63,7 @@ src/
 Rendering logic has been extracted from `timelineView.ts` into specialized modules:
 
 - `cardRenderer.ts`: Card DOM generation, action buttons, context menus
-- `embedRenderers.ts`: Excalidraw, Canvas, Office file embeds (deferred activation)
-- `pdfRenderer.ts`: PDF embed rendering with fallback for mobile
+- `embedRenderers.ts`: Excalidraw, Canvas, PDF embeds (deferred activation)
 - `contentPreview.ts`: Markdown preview rendering with line limits
 - `notebookParser.ts`: Jupyter notebook (.ipynb) parsing and rendering
 
@@ -104,7 +126,7 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 - `Platform.isMobile` for mobile-specific behavior; `mobileViewOnDesktop` setting enables mobile layout on desktop for testing
 - TypeScript strict mode: `noImplicitAny`, `strictNullChecks`, `noUncheckedIndexedAccess` all enabled
 - When adding new settings: update `PluginSettings` interface, `DEFAULT_SETTINGS`, and settings UI in `settings.ts`
-- PDF files are displayed using interactive `<embed>` elements with an "Open" button overlay
+- PDF files: Always use iframe rendering with `navpanes=0` to hide thumbnail sidebar; 600px height with page navigation
 - Source comments are in Japanese; maintain this convention
 - This is a TypeScript-only codebase; do not create JavaScript files
 - ESLint uses flat config (`eslint.config.mts`) with `eslint-plugin-obsidianmd` and `@eslint-community/eslint-plugin-eslint-comments`
@@ -115,3 +137,8 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 - Modal patterns: all modals accept a `plugin` reference (typed as `import type` from `main`), store drafts in plugin data, and support keyboard shortcuts (Ctrl+Enter to confirm)
 - Link generation uses `app.fileManager.generateMarkdownLink()` to respect the user's wikilink vs markdown link preference
 - **Modular architecture**: When adding features, prefer creating new focused modules over expanding existing files. For example, rendering logic was extracted from `timelineView.ts` into `cardRenderer.ts`, `embedRenderers.ts`, `pdfRenderer.ts` to improve maintainability
+- **Claude Code interaction guidelines**:
+  - On removal/deletion requests: Take direct action without over-clarification (user intent is clear)
+  - CLAUDE.md updates: Make incremental additions; avoid full-file rewrites unless restructuring is genuinely needed
+  - Web research: Limit to 2-3 sources before reporting findings; don't over-research established patterns
+  - Available skills: Use `/lint-fix`, `/build-validate`, `/check-types` for common workflows (see "Development Workflow Tools" section)
