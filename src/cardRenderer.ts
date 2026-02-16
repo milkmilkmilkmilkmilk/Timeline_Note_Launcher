@@ -164,14 +164,18 @@ function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard):
 	avatarEl.textContent = settings.twitterAvatarEmoji.trim() || '\u{1F4DD}';
 
 	const userMetaEl = headerEl.createDiv({ cls: 'timeline-twitter-card-user' });
+	// ファイル名をdisplay-nameに、Propertiesのtitleをhandleに表示
+	const propsTitle = typeof card.properties['title'] === 'string' ? card.properties['title'].trim() : '';
 	userMetaEl.createDiv({
 		cls: 'timeline-twitter-card-display-name',
-		text: settings.twitterDisplayName.trim() || 'Timeline User',
+		text: card.title,
 	});
-	userMetaEl.createDiv({
-		cls: 'timeline-twitter-card-handle',
-		text: settings.twitterHandle.trim() || '@timeline_user',
-	});
+	if (propsTitle && propsTitle !== card.title) {
+		userMetaEl.createDiv({
+			cls: 'timeline-twitter-card-handle',
+			text: propsTitle,
+		});
+	}
 
 	const timestamp = card.createdAt ?? card.lastReviewedAt;
 	headerEl.createDiv({

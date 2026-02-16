@@ -4159,8 +4159,6 @@
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-media img {
 	display: block;
 	width: 100%;
-	max-height: 420px;
-	object-fit: cover;
 }
 
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-helper {
@@ -4280,11 +4278,10 @@
 }
 
 .timeline-ui-twitter.timeline-twitter-v2.timeline-mobile .timeline-twitter-bottom-bar {
-	position: fixed;
-	left: 50%;
+	position: sticky;
 	bottom: 10px;
-	transform: translateX(-50%);
 	width: min(560px, calc(100% - 16px));
+	margin: 0 auto;
 	padding: 8px 10px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 16px;
@@ -4319,11 +4316,10 @@
 	}
 
 	.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-bottom-bar {
-		position: fixed;
-		left: 50%;
+		position: sticky;
 		bottom: 10px;
-		transform: translateX(-50%);
 		width: min(560px, calc(100% - 16px));
+		margin: 0 auto;
 		padding: 8px 10px;
 		border: 1px solid var(--background-modifier-border);
 		border-radius: 16px;
