@@ -61,7 +61,7 @@ export class TextInputModal extends Modal {
 		}
 	}
 
-	async waitForResult(): Promise<string | null> {
+	waitForResult(): Promise<string | null> {
 		return new Promise((resolve) => {
 			this.resolvePromise = resolve;
 		});

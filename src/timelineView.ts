@@ -89,6 +89,7 @@ export class TimelineView extends ItemView {
 		return 'rocket';
 	}
 
+	// eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle override, setup is synchronous
 	async onOpen(): Promise<void> {
 		this.listContainerEl = this.contentEl.createDiv({ cls: 'timeline-container' });
 

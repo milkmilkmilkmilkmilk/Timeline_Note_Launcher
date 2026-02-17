@@ -1,0 +1,8 @@
+#!/bin/sh
+# Obsidian plugin lint check — catches sentence-case violations, async-no-await, etc.
+echo "Running lint..."
+npm run lint
+if [ $? -ne 0 ]; then
+  echo "Lint failed. Fix errors before committing."
+  exit 1
+fi

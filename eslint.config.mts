@@ -36,6 +36,13 @@ export default tseslint.config(
 			'obsidianmd/ui/sentence-case': ['error', { ignoreWords: ['SRS'], enforceCamelCaseLower: true }],
 		},
 	},
+	{
+		files: ['**/*.ts'],
+		plugins: { '@typescript-eslint': tseslint.plugin },
+		rules: {
+			'@typescript-eslint/require-await': 'error',
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",

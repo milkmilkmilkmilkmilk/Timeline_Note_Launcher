@@ -8,7 +8,8 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"prepare": "node -e \"const {existsSync,mkdirSync,readFileSync,writeFileSync,chmodSync}=require('fs');if(existsSync('.git')){mkdirSync('.git/hooks',{recursive:true});writeFileSync('.git/hooks/pre-commit',readFileSync('scripts/pre-commit'));chmodSync('.git/hooks/pre-commit',0o755)}\""
 	},
 	"keywords": [],
 	"license": "MIT",
