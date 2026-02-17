@@ -131,7 +131,7 @@ export class TimelineView extends ItemView {
 			this.cachedAllTags = collectAllTags(this.cards);
 			this.newCount = cached.newCount;
 			this.dueCount = cached.dueCount;
-			await this.render();
+			this.render();
 		} else {
 			this.renderLoadingState();
 		}
@@ -206,7 +206,7 @@ export class TimelineView extends ItemView {
 	/**
 	 * モバイルモードを切り替え（PCのみ）
 	 */
-	async toggleMobileView(): Promise<void> {
+	toggleMobileView(): void {
 		if (Platform.isMobile) return;
 		this.plugin.data.settings.mobileViewOnDesktop = !this.plugin.data.settings.mobileViewOnDesktop;
 		void this.plugin.syncAndSave();
@@ -214,7 +214,7 @@ export class TimelineView extends ItemView {
 		// 強制的に再描画するためにキャッシュをクリア
 		this.lastCardPaths = [];
 		this.lastCardStateKeys = [];
-		await this.render();
+		this.render();
 	}
 
 	onClose(): Promise<void> {
@@ -267,7 +267,7 @@ export class TimelineView extends ItemView {
 		this.dueCount = result.dueCount;
 
 		// 描画
-		await this.render();
+		this.render();
 
 		// スクロール位置を復元
 		if (this.listContainerEl) {
@@ -482,7 +482,7 @@ export class TimelineView extends ItemView {
 	/**
 	 * カード一覧を描画
 	 */
-	private async render(): Promise<void> {
+	private render(): void {
 		// カードパスの変更を検知
 		const newPaths = this.cards.map(c => c.path);
 		const newStateKeys = this.cards.map(card => buildCardStateKey(card));
@@ -565,7 +565,7 @@ export class TimelineView extends ItemView {
 				text: isMobileView ? 'Desktop' : 'Mobile',
 				attr: { 'aria-label': isMobileView ? 'Switch to PC view' : 'Switch to Mobile view' },
 			});
-			toggleBtn.addEventListener('click', () => { void this.toggleMobileView(); });
+			toggleBtn.addEventListener('click', () => { this.toggleMobileView(); });
 		}
 
 		// リスト/グリッド切り替えボタン
@@ -650,7 +650,7 @@ export class TimelineView extends ItemView {
 		// 強制的に再描画するためにキャッシュをクリア
 		this.lastCardPaths = [];
 		this.lastCardStateKeys = [];
-		await this.render();
+		this.render();
 	}
 
 	/**
@@ -800,7 +800,7 @@ export class TimelineView extends ItemView {
 			listContainerEl: this.listContainerEl,
 			app: this.app,
 			plugin: this.plugin,
-			onFilterChanged: () => { void this.renderCardList(); },
+			onFilterChanged: () => { this.renderCardList(); },
 			render: () => this.render(),
 		};
 	}
@@ -808,7 +808,7 @@ export class TimelineView extends ItemView {
 	/**
 	 * カードリストのみを再描画（フィルタ変更時）
 	 */
-	private async renderCardList(): Promise<void> {
+	private renderCardList(): void {
 		if (!this.listContainerEl) {
 			return;
 		}

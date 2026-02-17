@@ -29,7 +29,7 @@ export interface FilterBarContext {
 	app: App;
 	plugin: TimelineNoteLauncherPlugin;
 	onFilterChanged: () => void;
-	render: () => Promise<void>;
+	render: () => void;
 }
 
 /**
@@ -314,7 +314,7 @@ function renderFilterPresets(ctx: FilterBarContext, container: HTMLElement): voi
 		deleteBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			void ctx.plugin.deleteFilterPreset(preset.id);
-			void ctx.render();
+			ctx.render();
 		});
 	}
 }
@@ -339,7 +339,7 @@ async function saveCurrentFilterAsPreset(ctx: FilterBarContext): Promise<void> {
 	};
 
 	await ctx.plugin.saveFilterPreset(preset);
-	await ctx.render();
+	ctx.render();
 }
 
 /**
@@ -351,7 +351,7 @@ function loadFilterPreset(ctx: FilterBarContext, preset: FilterPreset): void {
 	ctx.state.selectedTags = new Set(preset.selectedTags);
 	ctx.state.dateFilterStart = preset.dateFilterStart;
 	ctx.state.dateFilterEnd = preset.dateFilterEnd;
-	void ctx.render();
+	ctx.render();
 }
 
 /**
