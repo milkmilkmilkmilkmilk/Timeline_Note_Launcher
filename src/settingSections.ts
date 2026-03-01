@@ -75,7 +75,7 @@ export function buildSelectionModeSection(ctx: SettingSectionContext): void {
 		.addDropdown(dropdown => dropdown
 			.addOption('random', 'Random')
 			.addOption('age-priority', 'Age priority (older = higher)')
-			.addOption('srs', 'Spaced repetition (SRS)')
+			.addOption('srs', 'Spaced repetition')
 			.setValue(ctx.plugin.data.settings.selectionMode)
 			.onChange(async (value) => {
 				ctx.plugin.data.settings.selectionMode = value as SelectionMode;

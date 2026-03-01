@@ -615,9 +615,11 @@ export class TimelineView extends ItemView {
 		);
 		this.cardElements = elements;
 		this.listEl.appendChild(fragment);
-		// DOM接続後にPDF埋め込みとMarkdownレンダリングを遅延実行
-		void this.flushPendingEmbeds();
-		void this.flushPendingMarkdownRenders();
+		// DOM接続後にPDF埋め込みとMarkdownレンダリングを実行する
+		await Promise.all([
+			this.flushPendingEmbeds(),
+			this.flushPendingMarkdownRenders(),
+		]);
 
 		// 下部フッター
 		const footer = this.listContainerEl.createDiv({ cls: 'timeline-footer' });
@@ -850,8 +852,10 @@ export class TimelineView extends ItemView {
 		);
 		this.cardElements = listElements;
 		this.listEl.appendChild(listFragment);
-		void this.flushPendingEmbeds();
-		void this.flushPendingMarkdownRenders();
+		await Promise.all([
+			this.flushPendingEmbeds(),
+			this.flushPendingMarkdownRenders(),
+		]);
 
 		this.focusedIndex = -1;
 
