@@ -72,22 +72,22 @@ export function mergeReviewHistory(
 		if (!remoteEntry) {
 			merged[date] = localEntry;
 		} else {
-			// 各カウントの最大値を取る
+			// 各カウントの最大値を取る（旧バージョンデータの欠損キーは 0 として扱う）
 			merged[date] = {
 				newReviewed: Math.max(localEntry.newReviewed, remoteEntry.newReviewed),
 				reviewedCount: Math.max(localEntry.reviewedCount, remoteEntry.reviewedCount),
 				fileTypes: {
-					markdown: Math.max(localEntry.fileTypes.markdown, remoteEntry.fileTypes.markdown),
-					text: Math.max(localEntry.fileTypes.text, remoteEntry.fileTypes.text),
-					image: Math.max(localEntry.fileTypes.image, remoteEntry.fileTypes.image),
-					pdf: Math.max(localEntry.fileTypes.pdf, remoteEntry.fileTypes.pdf),
-					audio: Math.max(localEntry.fileTypes.audio, remoteEntry.fileTypes.audio),
-					video: Math.max(localEntry.fileTypes.video, remoteEntry.fileTypes.video),
-					office: Math.max(localEntry.fileTypes.office, remoteEntry.fileTypes.office),
-					ipynb: Math.max(localEntry.fileTypes.ipynb, remoteEntry.fileTypes.ipynb),
+					markdown: Math.max(localEntry.fileTypes.markdown ?? 0, remoteEntry.fileTypes.markdown ?? 0),
+					text: Math.max(localEntry.fileTypes.text ?? 0, remoteEntry.fileTypes.text ?? 0),
+					image: Math.max(localEntry.fileTypes.image ?? 0, remoteEntry.fileTypes.image ?? 0),
+					pdf: Math.max(localEntry.fileTypes.pdf ?? 0, remoteEntry.fileTypes.pdf ?? 0),
+					audio: Math.max(localEntry.fileTypes.audio ?? 0, remoteEntry.fileTypes.audio ?? 0),
+					video: Math.max(localEntry.fileTypes.video ?? 0, remoteEntry.fileTypes.video ?? 0),
+					office: Math.max(localEntry.fileTypes.office ?? 0, remoteEntry.fileTypes.office ?? 0),
+					ipynb: Math.max(localEntry.fileTypes.ipynb ?? 0, remoteEntry.fileTypes.ipynb ?? 0),
 					excalidraw: Math.max(localEntry.fileTypes.excalidraw ?? 0, remoteEntry.fileTypes.excalidraw ?? 0),
 					canvas: Math.max(localEntry.fileTypes.canvas ?? 0, remoteEntry.fileTypes.canvas ?? 0),
-					other: Math.max(localEntry.fileTypes.other, remoteEntry.fileTypes.other),
+					other: Math.max(localEntry.fileTypes.other ?? 0, remoteEntry.fileTypes.other ?? 0),
 				},
 			};
 		}
