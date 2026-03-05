@@ -71,6 +71,48 @@ export interface CardRenderContext {
 	refresh(): Promise<void>;
 }
 
+/**
+ * 三点メニューボタンのクリックハンドラー
+ * ノートを開き、そのリーフの "more-options" ファイルメニューを表示する
+ */
+function handleMoreOptionsClick(
+	ctx: CardRenderContext,
+	card: TimelineCard,
+	buttonEl: HTMLElement,
+): void {
+	const file = ctx.app.vault.getAbstractFileByPath(card.path);
+	if (!file || !(file instanceof TFile)) return;
+
+	void ctx.openNote(card).then(() => {
+		const leaf = ctx.app.workspace.getMostRecentLeaf();
+		const menu = new Menu();
+		ctx.app.workspace.trigger('file-menu', menu, file, 'more-options', leaf);
+		const rect = buttonEl.getBoundingClientRect();
+		menu.showAtPosition({ x: rect.right, y: rect.bottom });
+	});
+}
+
+/**
+ * カード右上の三点メニューボタンを作成する
+ */
+function createMoreOptionsButton(
+	ctx: CardRenderContext,
+	card: TimelineCard,
+	extraCls = '',
+): HTMLButtonElement {
+	const btn = createEl('button', {
+		cls: `timeline-card-more-options-btn ${extraCls}`.trim(),
+		attr: { 'aria-label': 'More options' },
+	});
+	setIcon(btn, 'more-horizontal');
+	btn.addEventListener('click', (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		handleMoreOptionsClick(ctx, card, btn);
+	});
+	return btn;
+}
+
 function createTwitterActionButton(
 	container: HTMLElement,
 	icon: string,
@@ -182,6 +224,8 @@ function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard):
 		cls: 'timeline-twitter-card-date',
 		text: timestamp ? new Date(timestamp).toLocaleDateString() : '',
 	});
+
+	headerEl.appendChild(createMoreOptionsButton(ctx, card, 'timeline-twitter-v2-header-more'));
 
 	const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview timeline-twitter-card-preview' });
 	if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
@@ -482,6 +526,8 @@ export function createCardElement(ctx: CardRenderContext, card: TimelineCard): H
 		// 同期：ヘッダーのブックマークボタンも更新
 		headerBookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 	});
+
+	titleRow.appendChild(createMoreOptionsButton(ctx, card, 'timeline-classic-more-options'));
 
 	// プレビュー（Canvas/Officeは埋め込みのみ表示するためスキップ）
 	if (card.fileType !== 'canvas' && card.fileType !== 'office') {
@@ -848,6 +894,8 @@ export function createGridCardElement(ctx: CardRenderContext, card: TimelineCard
 		const nowBookmarked = ctx.toggleBookmark(card.path);
 		bookmarkBtn.classList.toggle('is-bookmarked', nowBookmarked);
 	});
+
+	overlayEl.appendChild(createMoreOptionsButton(ctx, card, 'timeline-grid-more-options'));
 
 	// タイトル
 	const infoEl = cardEl.createDiv({ cls: 'timeline-grid-card-info' });
