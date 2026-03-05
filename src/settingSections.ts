@@ -336,8 +336,8 @@ export function buildDisplaySection(ctx: SettingSectionContext): void {
 				}));
 
 		new Setting(ctx.containerEl)
-			.setName('Show SRS in actions')
-			.setDesc('Show SRS status chip in Twitter-like action row')
+			.setName('Show spaced repetition in actions')
+			.setDesc('Show spaced repetition status chip in the action row')
 			.addToggle(toggle => toggle
 				.setValue(ctx.plugin.data.settings.twitterShowSrsInActions)
 				.onChange(async (value) => {
