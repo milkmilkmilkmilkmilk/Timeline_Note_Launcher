@@ -44,41 +44,15 @@ These scripts automatically add Node.js to PATH if installed in the default Wind
 
 ## Architecture
 
-### Core Files
+### Module Organization
 
-```
-src/
-├── main.ts            # Plugin entry point, lifecycle, command registration, caching layer
-├── types.ts           # All interfaces, types, defaults, and PluginData schema
-├── timelineView.ts    # Main UI view (ItemView subclass), orchestrates rendering
-├── dataLayer.ts       # File enumeration, card creation, SRS calculations, statistics
-├── selectionEngine.ts # Card selection/sorting algorithms (random, age-priority, srs)
-├── srsEngine.ts       # SM-2 spaced repetition algorithm implementation
-├── settings.ts        # Settings tab UI with statistics dashboard
-├── settingSections.ts # Modular settings section builders (extracted from settings.ts)
-├── statistics.ts      # Review statistics and history logic (extracted from dataLayer.ts)
-├── noteAnnotation.ts  # Note annotation logic (extracted from dataLayer.ts)
-├── timelineViewUtils.ts # Utility functions (extracted from timelineView.ts)
-└── dataMerge.ts       # Conflict resolution for concurrent data.json saves
-```
+All source code is in `src/`. Modules are grouped by responsibility:
 
-### Modular Rendering Components
-
-Rendering logic has been extracted from `timelineView.ts` into specialized modules:
-
-- `cardRenderer.ts`: Card DOM generation, action buttons, context menus
-- `embedRenderers.ts`: Excalidraw, Canvas, PDF embeds (deferred activation via iframe with `navpanes=0`)
-- `contentPreview.ts`: Markdown preview rendering with line limits
-- `notebookParser.ts`: Jupyter notebook (.ipynb) parsing and rendering
-
-### UI Modules
-
-- `filterBar.ts`: Search, file type, tag, date filters with preset save/load
-- `keyboardNav.ts`: Keyboard shortcut handling (j/k navigation, rating hotkeys)
-- `pullToRefresh.ts`: Mobile pull-to-refresh gesture
-- `commentModal.ts`, `quoteNoteModal.ts`, `linkNoteModal.ts`: Note annotation modals
-- `quickNoteModal.ts`: Compose and create new notes from the timeline
-- `textInputModal.ts`: Generic text input modal base class
+- **Core**: `main.ts` (plugin lifecycle, caching), `types.ts` (all interfaces/defaults/`PluginData` schema), `dataMerge.ts` (concurrent `data.json` conflict resolution)
+- **Data pipeline**: `dataLayer.ts` (file enumeration, card creation), `selectionEngine.ts` (random/age-priority/srs sorting), `srsEngine.ts` (SM-2 algorithm), `statistics.ts`, `noteAnnotation.ts`
+- **View & rendering**: `timelineView.ts` (main `ItemView` subclass), `cardRenderer.ts` (card DOM, action buttons, context menus), `embedRenderers.ts` (PDF/Excalidraw/Canvas deferred embeds), `contentPreview.ts`, `notebookParser.ts`
+- **UI components**: `filterBar.ts`, `keyboardNav.ts`, `pullToRefresh.ts`, `settings.ts` + `settingSections.ts`
+- **Modals**: `commentModal.ts`, `quoteNoteModal.ts`, `linkNoteModal.ts`, `quickNoteModal.ts` (all extend `textInputModal.ts`)
 
 ### Data Flow (Two-Phase Card Pipeline)
 
@@ -93,16 +67,7 @@ Selection operates on lightweight candidates to avoid unnecessary file I/O:
 7. `activatePendingEmbeds()` from `embedRenderers.ts` activates visible embeds post-DOM-insertion
 8. Rating buttons trigger `rateCard()` → `updateReviewLogWithSRS()` (from `srsEngine.ts`) → save
 
-### Rendering Optimizations
-
-- **Differential rendering**: Skips DOM rebuild if card paths are unchanged (stat-only updates)
-- **Chunk processing**: 5 cards per chunk with `Promise.all()` for parallel creation
-- **DOM batching**: DocumentFragment before appendChild
-- **Deferred embeds**: PDF/Excalidraw/Canvas embeds are created as placeholders, activated only when DOM-connected
-- **Caching layers** (see `main.ts`):
-  - Backlink index: 300s TTL (5 minutes)
-  - Target files: 300s TTL (5 minutes)
-  - Timeline cards: 300s TTL (5 minutes)
+**Rendering optimizations**: Differential rendering (skips DOM rebuild if card paths unchanged), chunk processing (5 cards per chunk with `Promise.all()`), DOM batching via DocumentFragment, deferred embed activation (placeholders until DOM-connected). Three caching layers in `main.ts`: backlink index, target files, and timeline cards (all 300s TTL).
 
 ### Plugin Data Structure
 
@@ -113,7 +78,11 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
 - `reviewHistory`: 30-day activity for heatmap
 - `commentDrafts`/`quoteNoteDrafts`: Unsaved modal content
 
-**Concurrent save handling**: `dataMerge.ts` provides pure functions to merge conflicting plugin data when multiple Obsidian instances modify `data.json` simultaneously. The merge strategy is last-write-wins for `lastReviewedAt` timestamps, union for collections.
+**Concurrent save handling**: `dataMerge.ts` merges conflicting plugin data when multiple Obsidian instances modify `data.json` simultaneously (last-write-wins for timestamps, union for collections).
+
+### Build Output & Deployment
+
+The plugin ships three files to users (all in repo root): `main.js` (esbuild bundle), `styles.css`, `manifest.json`. Version bumping: `npm run version` updates `manifest.json` and `versions.json` via `version-bump.mjs`.
 
 ### CSS Architecture
 
@@ -138,7 +107,8 @@ Persisted in `data.json` (see `PluginData` interface in `types.ts`):
   - `obsidianmd/ui/sentence-case`: Enforces sentence case in UI text (ignores 'SRS')
   - `@eslint-community/eslint-comments/require-description`: Disable comments must include reason
   - Format: `// eslint-disable-next-line rule-name -- reason`
-- Modal patterns: all modals accept a `plugin` reference (typed as `import type` from `main`), store drafts in plugin data, and support keyboard shortcuts (Ctrl+Enter to confirm)
+- **Circular dependency avoidance**: Modules that need the plugin class use `import type` from `main.ts` (never a runtime import). This applies to all modals, `cardRenderer.ts`, `timelineView.ts`, etc.
+- Modal patterns: all modals accept a `plugin` reference (typed via `import type`), store drafts in plugin data, and support Ctrl+Enter to confirm
 - Link generation uses `app.fileManager.generateMarkdownLink()` to respect the user's wikilink vs markdown link preference
 - **Modular architecture**: When adding features, prefer creating new focused modules over expanding existing files. For example, rendering logic was extracted from `timelineView.ts` into `cardRenderer.ts`, `embedRenderers.ts`; settings UI into `settingSections.ts`; data logic into `statistics.ts`, `noteAnnotation.ts`
 - **Claude Code interaction guidelines**:
