@@ -499,6 +499,57 @@
 	fill: var(--text-warning);
 }
 
+/* 三点メニューボタン（共通） */
+.timeline-card-more-options-btn {
+	padding: 4px 6px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: var(--text-faint);
+	opacity: 0.5;
+	transition: all 0.15s ease;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	flex-shrink: 0;
+}
+
+.timeline-card-more-options-btn:hover {
+	opacity: 1;
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+}
+
+.timeline-card-more-options-btn .svg-icon {
+	width: 16px;
+	height: 16px;
+}
+
+/* Grid: オーバーレイ内の三点メニュー */
+.timeline-grid-more-options {
+	background: rgba(0, 0, 0, 0.5);
+	border-radius: 6px;
+	color: var(--text-faint);
+	opacity: 1;
+	height: fit-content;
+}
+
+.timeline-grid-more-options .svg-icon {
+	width: 18px;
+	height: 18px;
+}
+
+.timeline-grid-more-options:hover {
+	background: rgba(0, 0, 0, 0.7);
+	color: var(--text-normal);
+}
+
+/* モバイル向け（大きめタッチターゲット） */
+.timeline-mobile .timeline-card-more-options-btn {
+	padding: 8px 10px;
+}
+
 /* グリッドカード 情報領域 */
 .timeline-grid-card-info {
 	padding: 10px 12px;
@@ -4141,6 +4192,16 @@
 	margin-left: auto;
 	font-size: 12px;
 	color: var(--text-faint);
+}
+
+/* Twitter V2: ヘッダー内の三点メニュー */
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-more {
+	margin-left: 8px;
+	opacity: 0.4;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-more:hover {
+	opacity: 1;
 }
 
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-preview {
