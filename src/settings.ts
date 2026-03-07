@@ -8,7 +8,7 @@ import type { SettingSectionContext } from './settingSections';
 /**
  * デバウンス関数
  */
-function debounce<T extends (...args: Parameters<T>) => void>(
+function debounce<T extends (...args: any[]) => void>(
 	func: T,
 	wait: number
 ): (...args: Parameters<T>) => void {
