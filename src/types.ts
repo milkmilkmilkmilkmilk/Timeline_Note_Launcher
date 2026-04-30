@@ -136,6 +136,14 @@ export interface QuoteNoteDrafts {
 	[sourcePath: string]: QuoteNoteDraft;
 }
 
+/** いいね一覧（パス → いいねした時刻 Unix timestamp） */
+export interface LikedNotes {
+	[notePath: string]: number;
+}
+
+/** 検索索引のシリアライズ型は searchIndex.ts で定義。参照のため再エクスポート。 */
+export type { SerializedIndex } from './searchIndex';
+
 /** フィルタープリセット */
 export interface FilterPreset {
 	id: string;                    // 一意のID
@@ -187,6 +195,12 @@ export interface PluginData {
 	quoteNoteDrafts: QuoteNoteDrafts;
 	// フィルタープリセット
 	filterPresets: FilterPreset[];
+	// いいね記録（Twitterライクなお気に入り）
+	likedNotes: LikedNotes;
+	// 内容ベース検索索引（BM25）。null は未構築
+	searchIndex: import('./searchIndex').SerializedIndex | null;
+	searchIndexBuiltAt: number | null;
+	searchIndexDocCount: number;
 }
 
 /** リンク情報 */
@@ -366,6 +380,10 @@ export const DEFAULT_DATA: PluginData = {
 	commentDrafts: {},
 	quoteNoteDrafts: {},
 	filterPresets: [],
+	likedNotes: {},
+	searchIndex: null,
+	searchIndexBuiltAt: null,
+	searchIndexDocCount: 0,
 };
 
 /** 本日の日付文字列を取得 */

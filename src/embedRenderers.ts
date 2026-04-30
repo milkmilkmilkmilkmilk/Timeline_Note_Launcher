@@ -452,6 +452,8 @@ async function renderPdfViaNativeIframe(
 			src,
 			title: `PDF preview: ${pdfFile.basename}`,
 			loading: 'lazy',
+			// ダークテーマのcolor-schemeをiframe内PDFビューアーに継承させない
+			style: 'color-scheme: light',
 		},
 	});
 	return waitForPdfFrame(frame);

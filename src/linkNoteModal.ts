@@ -4,6 +4,8 @@ import { appendLinksToNote, extractOutgoingLinks, getCompanionNotePath, getFileT
 import type TimelineNoteLauncherPlugin from './main';
 import type { FileType, LinkedNote } from './types';
 
+export type LinkSearchMode = 'title' | 'content';
+
 export class LinkNoteModal extends Modal {
 	private plugin: TimelineNoteLauncherPlugin;
 	private file: TFile;
@@ -16,6 +18,8 @@ export class LinkNoteModal extends Modal {
 	private debounceTimer: number | null = null;
 	private existingPaths: Set<string>;
 	private allMarkdownFiles: TFile[];
+	private searchMode: LinkSearchMode = 'title';
+	private searchModeToggleBtn: HTMLButtonElement | null = null;
 
 	constructor(app: App, plugin: TimelineNoteLauncherPlugin, file: TFile) {
 		super(app);
@@ -82,6 +86,31 @@ export class LinkNoteModal extends Modal {
 			cls: 'timeline-link-note-label',
 		});
 
+		// 検索モード切替（Title / Content）
+		const searchModeBar = searchSection.createDiv({ cls: 'timeline-link-note-search-mode-bar' });
+		this.searchModeToggleBtn = searchModeBar.createEl('button', {
+			cls: 'timeline-link-note-search-mode-btn',
+			text: 'タイトル検索',
+			attr: { 'aria-label': 'Toggle content search' },
+		});
+		this.searchModeToggleBtn.addEventListener('click', () => {
+			if (this.searchMode === 'title') {
+				if (!this.plugin.searchIndex.isBuilt()) {
+					this.searchResultsEl.empty();
+					this.searchResultsEl.createDiv({
+						cls: 'timeline-link-note-search-empty',
+						text: '検索索引が未構築です。設定から索引を構築してください。',
+					});
+					return;
+				}
+				this.searchMode = 'content';
+			} else {
+				this.searchMode = 'title';
+			}
+			this.updateSearchModeButton();
+			this.performSearch(this.searchInput.value);
+		});
+
 		this.searchInput = searchSection.createEl('input', {
 			cls: 'timeline-link-note-search-input',
 			attr: {
@@ -98,6 +127,8 @@ export class LinkNoteModal extends Modal {
 				this.performSearch(this.searchInput.value);
 			}, 300);
 		});
+
+		this.updateSearchModeButton();
 
 		// 検索結果リスト
 		this.searchResultsEl = searchSection.createDiv({ cls: 'timeline-link-note-search-results' });
@@ -157,26 +188,56 @@ export class LinkNoteModal extends Modal {
 		this.contentEl.empty();
 	}
 
+	private updateSearchModeButton(): void {
+		if (!this.searchModeToggleBtn) return;
+		const isContent = this.searchMode === 'content';
+		this.searchModeToggleBtn.textContent = isContent ? '内容検索' : 'タイトル検索';
+		this.searchModeToggleBtn.classList.toggle('is-content', isContent);
+		if (this.searchInput) {
+			this.searchInput.placeholder = isContent
+				? '内容のフレーズで検索...'
+				: 'ノート名を入力して検索...';
+		}
+	}
+
 	private performSearch(query: string): void {
 		this.searchResultsEl.empty();
 
-		const trimmed = query.trim().toLowerCase();
+		const trimmed = query.trim();
 		if (!trimmed) return;
 
 		const selectedPaths = new Set(this.selectedNotes.map(f => f.path));
+		let results: TFile[];
 
-		const results: TFile[] = [];
-
-		for (const f of this.allMarkdownFiles) {
-			// 自分自身を除外
-			if (f.path === this.file.path) continue;
-			// 選択済みを除外
-			if (selectedPaths.has(f.path)) continue;
-
-			// basename/path で case-insensitive includes フィルタ
-			if (f.basename.toLowerCase().includes(trimmed) || f.path.toLowerCase().includes(trimmed)) {
-				results.push(f);
-				if (results.length >= 20) break;
+		if (this.searchMode === 'content') {
+			if (!this.plugin.searchIndex.isBuilt()) {
+				this.searchResultsEl.createDiv({
+					cls: 'timeline-link-note-search-empty',
+					text: '検索索引が未構築です。設定から索引を構築してください。',
+				});
+				return;
+			}
+			const hits = this.plugin.searchIndex.search(trimmed, 50);
+			results = [];
+			for (const hit of hits) {
+				if (hit.path === this.file.path) continue;
+				if (selectedPaths.has(hit.path)) continue;
+				const resolved = this.app.vault.getAbstractFileByPath(hit.path);
+				if (resolved instanceof TFile) {
+					results.push(resolved);
+					if (results.length >= 20) break;
+				}
+			}
+		} else {
+			const lower = trimmed.toLowerCase();
+			results = [];
+			for (const f of this.allMarkdownFiles) {
+				if (f.path === this.file.path) continue;
+				if (selectedPaths.has(f.path)) continue;
+				if (f.basename.toLowerCase().includes(lower) || f.path.toLowerCase().includes(lower)) {
+					results.push(f);
+					if (results.length >= 20) break;
+				}
 			}
 		}
 

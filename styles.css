@@ -327,6 +327,50 @@
 	display: none;
 }
 
+.timeline-filter-folders {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+	width: 100%;
+}
+
+.timeline-filter-folders-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	white-space: nowrap;
+}
+
+.timeline-folder-chip {
+	padding: 4px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 12px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 11px;
+	transition: all 0.15s ease;
+}
+
+.timeline-folder-chip:hover {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+.timeline-folder-chip:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.timeline-folder-chip.is-active {
+	background: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
 /* モバイル向けフィルタバー調整 */
 .timeline-mobile .timeline-filter-bar {
 	padding: 8px;
@@ -811,13 +855,13 @@
 	transform: scale(1.02);
 }
 
-/* プレビュー */
+/* プレビュー
+   white-space: pre-wrap はプレースホルダー（生テキスト）にのみ必要。
+   MarkdownRenderer 出力のブロック要素間の改行が空行として可視化されてしまうため、
+   レンダリング済みコンテナには指定しない。 */
 .timeline-card-preview {
-	font-size: 13px;
-	color: var(--text-muted);
 	line-height: 1.5;
 	margin-bottom: 8px;
-	white-space: pre-wrap;
 	word-wrap: break-word;
 }
 
@@ -836,10 +880,9 @@
 	overflow: hidden;
 }
 
-/* プレビュー内のマークダウン要素 */
+/* プレビュー内のマークダウン要素 — Obsidian の markdown-rendered CSS を上書きしない */
 .timeline-card-preview p {
 	margin: 0 0 0.5em 0;
-	white-space: pre-wrap;
 }
 
 .timeline-card-preview p:last-child {
@@ -853,54 +896,21 @@
 .timeline-card-preview h5,
 .timeline-card-preview h6 {
 	margin: 0.5em 0 0.3em 0;
-	font-size: 1.1em;
-	color: var(--text-normal);
 }
 
 .timeline-card-preview ul,
 .timeline-card-preview ol {
 	margin: 0.3em 0;
 	padding-left: 1.5em;
-	white-space: normal;
 }
 
 .timeline-card-preview li {
 	margin: 0.2em 0;
 }
 
-.timeline-card-preview code {
-	font-size: 0.9em;
-	background: var(--background-primary);
-	padding: 0.1em 0.3em;
-	border-radius: 3px;
-	font-family: var(--font-monospace);
-	white-space: pre-wrap;
-}
-
 .timeline-card-preview pre {
 	margin: 0.5em 0;
-	padding: 0.5em;
-	background: var(--background-primary);
-	border-radius: 4px;
 	overflow-x: auto;
-	font-family: var(--font-monospace);
-	white-space: pre;
-	tab-size: 4;
-}
-
-.timeline-card-preview pre code {
-	white-space: pre;
-}
-
-.timeline-card-preview blockquote {
-	margin: 0.5em 0;
-	padding-left: 1em;
-	border-left: 3px solid var(--interactive-accent);
-	color: var(--text-muted);
-}
-
-.timeline-card-preview a {
-	color: var(--text-accent);
 }
 
 .timeline-card-preview img {
@@ -908,23 +918,6 @@
 	height: auto;
 	border-radius: 4px;
 	margin: 0.5em 0;
-}
-
-.timeline-card-preview .internal-link {
-	color: var(--text-accent);
-	text-decoration: none;
-}
-
-.timeline-card-preview .internal-link:hover {
-	text-decoration: underline;
-}
-
-.timeline-card-preview .tag {
-	color: var(--text-accent);
-	background: var(--background-primary);
-	padding: 0.1em 0.4em;
-	border-radius: 3px;
-	font-size: 0.9em;
 }
 
 /* リンクリスト */
@@ -2502,9 +2495,13 @@
 /* ===== 画像サイズモード ===== */
 
 /* Small (100px) */
-.timeline-image-small .timeline-card-thumbnail img {
+.timeline-image-small .timeline-card-thumbnail:has(> img) {
 	max-height: 100px;
-	object-fit: cover;
+	overflow-y: auto;
+}
+.timeline-image-small .timeline-card-thumbnail img {
+	height: auto;
+	max-height: none;
 }
 .timeline-image-small .timeline-grid-card-thumbnail {
 	aspect-ratio: 1;
@@ -2515,9 +2512,13 @@
 }
 
 /* Medium (200px) - デフォルト */
-.timeline-image-medium .timeline-card-thumbnail img {
+.timeline-image-medium .timeline-card-thumbnail:has(> img) {
 	max-height: 200px;
-	object-fit: cover;
+	overflow-y: auto;
+}
+.timeline-image-medium .timeline-card-thumbnail img {
+	height: auto;
+	max-height: none;
 }
 .timeline-image-medium .timeline-grid-card-thumbnail {
 	aspect-ratio: 1;
@@ -2528,9 +2529,13 @@
 }
 
 /* Large (400px) */
-.timeline-image-large .timeline-card-thumbnail img {
+.timeline-image-large .timeline-card-thumbnail:has(> img) {
 	max-height: 400px;
-	object-fit: cover;
+	overflow-y: auto;
+}
+.timeline-image-large .timeline-card-thumbnail img {
+	height: auto;
+	max-height: none;
 }
 .timeline-image-large .timeline-grid-card-thumbnail {
 	aspect-ratio: 4/3;
@@ -2598,6 +2603,15 @@
 	display: block;
 	border: none;
 	background: var(--background-primary);
+}
+
+/* iframeのPDFビューアーをライトモードで描画させる（ダークテーマで真っ黒になる問題の対策） */
+.timeline-pdf-native-frame {
+	width: 100%;
+	height: 100%;
+	display: block;
+	border: none;
+	color-scheme: light;
 }
 
 /* PDF オープンボタン */
@@ -2867,16 +2881,18 @@
 	width: 100%;
 	overflow: hidden;
 	border-radius: 8px;
-	min-height: 200px;
+	min-height: 240px;
 }
 
 .timeline-card-canvas-embed .timeline-canvas-embed-host {
 	width: 100%;
+	min-height: 240px;
 	pointer-events: none;
 }
 
 .timeline-card-canvas-embed .timeline-canvas-embed-host .internal-embed {
 	width: 100%;
+	min-height: 240px;
 	display: block;
 }
 
@@ -2886,18 +2902,20 @@
 	background: var(--background-primary);
 	overflow: hidden;
 	border-radius: 8px 8px 0 0;
-	min-height: 200px;
+	min-height: 240px;
 }
 
 .timeline-grid-card-canvas-embed .timeline-canvas-embed-host {
 	width: 100%;
 	height: 100%;
+	min-height: 240px;
 	pointer-events: none;
 }
 
 .timeline-grid-card-canvas-embed .timeline-canvas-embed-host .internal-embed {
 	width: 100%;
 	height: 100%;
+	min-height: 240px;
 	display: block;
 }
 
@@ -4188,6 +4206,67 @@
 	line-height: 1.1;
 }
 
+/* タイトル直下のフォルダパス表示 */
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-path {
+	font-size: 11px;
+	color: var(--text-faint);
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* インライン編集モード */
+.timeline-card-editing {
+	cursor: default;
+}
+
+.timeline-card-edit-wrap {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.timeline-card-edit-textarea {
+	width: 100%;
+	min-height: 200px;
+	max-height: 600px;
+	resize: vertical;
+	padding: 8px 10px;
+	font-family: var(--font-monospace);
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--text-normal);
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	outline: none;
+}
+
+.timeline-card-edit-textarea:focus {
+	border-color: var(--interactive-accent);
+}
+
+.timeline-card-edit-controls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.timeline-card-edit-hint {
+	font-size: 11px;
+	color: var(--text-faint);
+	margin-right: auto;
+}
+
+.timeline-card-edit-cancel,
+.timeline-card-edit-save {
+	padding: 4px 12px;
+	font-size: 12px;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-date {
 	margin-left: auto;
 	font-size: 12px;
@@ -4202,6 +4281,56 @@
 
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-more:hover {
 	opacity: 1;
+}
+
+/* Twitter V2: ヘッダー内の Comment / Quote ボタン */
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-action {
+	position: relative;
+	padding: 4px 6px;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: var(--text-faint);
+	opacity: 0.5;
+	transition: all 0.15s ease;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	flex-shrink: 0;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-action:hover {
+	opacity: 1;
+	background: var(--background-modifier-hover);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-comment:hover {
+	color: var(--text-accent);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-quote:hover {
+	color: var(--interactive-success, #22c55e);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-action .svg-icon {
+	width: 16px;
+	height: 16px;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-action.has-draft {
+	opacity: 0.9;
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-header-action.has-draft::after {
+	content: '';
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 6px;
+	height: 6px;
+	background: var(--text-warning);
+	border-radius: 50%;
 }
 
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-preview {
@@ -4238,6 +4367,26 @@
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-card-helper-path {
 	font-size: 12px;
 	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Classic / Grid カードのパス表示（タイトル直下） */
+.timeline-card-path {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-top: 2px;
+	margin-bottom: 6px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.timeline-grid-card-path {
+	font-size: 10px;
+	color: var(--text-muted);
+	margin-top: 2px;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -4286,13 +4435,129 @@
 	color: var(--text-warning);
 }
 
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action.is-liked {
+	color: var(--color-red, #f91880);
+}
+
+.timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-v2-action.is-liked .svg-icon {
+	fill: var(--color-red, #f91880);
+}
+
+/* 検索モード切替ボタン（フィルターバー） */
+.timeline-search-mode-btn {
+	padding: 4px 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--timeline-radius-md);
+	background: var(--background-primary);
+	color: var(--text-muted);
+	cursor: pointer;
+	font-size: 14px;
+	line-height: 1;
+}
+
+.timeline-search-mode-btn.is-content {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+/* Link modal: 検索モード切替 */
+.timeline-link-note-search-mode-bar {
+	margin-bottom: 6px;
+}
+
+.timeline-link-note-search-mode-btn {
+	padding: 4px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--timeline-radius-md);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	cursor: pointer;
+	font-size: 12px;
+}
+
+.timeline-link-note-search-mode-btn.is-content {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+/* 類似ノート検索モーダル */
+.timeline-similar-notes-modal {
+	max-width: 600px;
+}
+
+.timeline-similar-notes-title {
+	margin-top: 0;
+	margin-bottom: 6px;
+}
+
+.timeline-similar-notes-hint {
+	font-size: 12px;
+	color: var(--text-muted);
+	margin-bottom: 12px;
+}
+
+.timeline-similar-notes-list {
+	max-height: 60vh;
+	overflow-y: auto;
+}
+
+.timeline-similar-notes-item {
+	padding: 8px 10px;
+	border-radius: var(--timeline-radius-md);
+	cursor: pointer;
+	border: 1px solid transparent;
+}
+
+.timeline-similar-notes-item:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--background-modifier-border);
+}
+
+.timeline-similar-notes-item-title {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.timeline-similar-notes-item-name {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.timeline-similar-notes-item-score {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.timeline-similar-notes-item-path {
+	font-size: 11px;
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+
+.timeline-similar-notes-empty {
+	color: var(--text-muted);
+	padding: 20px;
+	text-align: center;
+}
+
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-srs-chip {
 	margin-left: auto;
-	font-size: 12px;
-	padding: 4px 10px;
-	border-radius: 999px;
-	border: 1px solid var(--background-modifier-border);
+	align-self: center;
+	font-size: 10px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--background-modifier-border);
 	color: var(--text-muted);
+	pointer-events: none;
+	user-select: none;
 }
 
 .timeline-ui-twitter.timeline-twitter-v2 .timeline-twitter-footer {

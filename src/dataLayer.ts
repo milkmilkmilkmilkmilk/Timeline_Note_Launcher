@@ -11,6 +11,7 @@ import {
 	DEFAULT_REVIEW_LOG,
 } from './types';
 import { parseJupyterNotebook, buildNotebookPreview } from './notebookParser';
+import { parseCanvas, buildCanvasPreview } from './canvasParser';
 import { extractFirstImage, getPreviewText } from './contentPreview';
 
 // re-export: 他ファイルからの既存importを維持
@@ -620,7 +621,17 @@ export async function createTimelineCard(
 			firstImagePath = file.path;  // 埋め込み表示用
 			break;
 		case 'canvas':
-			preview = '📊 Canvas';
+			try {
+				const canvasContent = await app.vault.cachedRead(file);
+				const parsedCanvas = parseCanvas(canvasContent);
+				if (parsedCanvas) {
+					preview = buildCanvasPreview(parsedCanvas, settings.previewMode, settings.previewLines);
+				} else {
+					preview = '📊 Canvas (invalid format)';
+				}
+			} catch {
+				preview = '📊 Canvas';
+			}
 			firstImagePath = file.path;  // 埋め込み表示用
 			break;
 		default:

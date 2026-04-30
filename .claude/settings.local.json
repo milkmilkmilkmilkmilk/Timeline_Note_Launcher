@@ -1,13 +1,32 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(npm run build:*)",
       "Bash(git -C /mnt/c/Users/usumi/Documents/Obsidian_Vault/.obsidian/plugins/Timeline_Note_Launcher status)",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(echo:*)",
+      "Bash(powershell.exe -Command \"Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\":*)",
+      "Bash(powershell.exe -Command \"Get-Command npm -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(command -v:*)",
+      "Bash(chmod:*)",
+      "Bash(./build.sh:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/nodejs\")",
+      "Bash(npm install:*)",
+      "Bash(./npm.sh run lint:*)",
+      "Bash(grep:*)",
+      "Bash(./npm.sh:*)",
+      "Bash(start docs/report.html)",
+      "Bash(.git/hooks/pre-commit)",
+      "Bash(git commit:*)",
+      "Bash(git add:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Read(//home/usumi/.claude/plugins/marketplaces/genshijin/.claude-plugin/**)",
+      "Bash(bash ./npm.sh run lint)"
     ]
-  },
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "teammateMode": "tmux"
 }

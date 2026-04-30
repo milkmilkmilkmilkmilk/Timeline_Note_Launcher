@@ -1,5 +1,5 @@
 // Timeline Note Launcher - Main Plugin
-import { Plugin, TFile } from 'obsidian';
+import { Menu, Notice, Plugin, TFile } from 'obsidian';
 import { PluginData, DEFAULT_DATA, DifficultyRating, TimelineCard, getTodayString, QuoteNoteDraft, RatingUndoSnapshot, FilterPreset } from './types';
 import { TimelineView, TIMELINE_VIEW_TYPE } from './timelineView';
 import { TimelineSettingTab } from './settings';
@@ -18,6 +18,11 @@ import {
 } from './dataLayer';
 import { selectCards } from './selectionEngine';
 import { mergePluginData, reconstructFullData } from './dataMerge';
+import { SearchIndex } from './searchIndex';
+import { extractSearchableText } from './contentExtractor';
+import { SimilarNotesModal } from './similarNotesModal';
+import { CommentModal } from './commentModal';
+import { QuoteNoteModal } from './quoteNoteModal';
 
 export default class TimelineNoteLauncherPlugin extends Plugin {
 	data: PluginData;
@@ -37,6 +42,9 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	private ratingUndoMap: Map<string, RatingUndoSnapshot> = new Map();
 	// 保存キュー（直列化用）
 	private saveQueue: Promise<void> = Promise.resolve();
+	// 内容ベース検索索引（BM25）
+	searchIndex: SearchIndex = new SearchIndex();
+	private searchIndexRebuilding: boolean = false;
 
 	async onload(): Promise<void> {
 		// データ読み込み
@@ -70,6 +78,48 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: 'rebuild-search-index',
+			name: 'Rebuild search index',
+			callback: () => {
+				void this.rebuildSearchIndex();
+			},
+		});
+
+		this.addCommand({
+			id: 'find-similar-notes',
+			name: 'Find similar notes (based on current note content)',
+			callback: () => {
+				void this.openFindSimilarModal();
+			},
+		});
+
+		this.addCommand({
+			id: 'add-comment',
+			name: 'Add comment to active note',
+			callback: () => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file) {
+					new Notice('コメントを追加するノートがアクティブではありません。');
+					return;
+				}
+				new CommentModal(this.app, this, file).open();
+			},
+		});
+
+		this.addCommand({
+			id: 'create-quote-note',
+			name: 'Create quote note from active note',
+			callback: () => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file) {
+					new Notice('引用ノートを作成するノートがアクティブではありません。');
+					return;
+				}
+				new QuoteNoteModal(this.app, this, file).open();
+			},
+		});
+
 		// 設定タブ
 		this.addSettingTab(new TimelineSettingTab(this.app, this));
 
@@ -85,10 +135,53 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			this.backlinkIndexCache = null;
 			// targetFilesCache と timelineCardsCache は TTL に任せる
 		};
+		this.registerEvent(this.app.workspace.on('file-menu', (menu: Menu, file) => {
+			if (!(file instanceof TFile)) return;
+			menu.addItem((item) => {
+				item
+					.setTitle('コメントを追加')
+					.setIcon('message-square')
+					.onClick(() => {
+						new CommentModal(this.app, this, file).open();
+					});
+			});
+			menu.addItem((item) => {
+				item
+					.setTitle('引用ノートを作成')
+					.setIcon('quote')
+					.onClick(() => {
+						new QuoteNoteModal(this.app, this, file).open();
+					});
+			});
+		}));
+
 		this.registerEvent(this.app.vault.on('create', invalidateStructuralCaches));
 		this.registerEvent(this.app.vault.on('delete', invalidateStructuralCaches));
 		this.registerEvent(this.app.vault.on('rename', invalidateStructuralCaches));
 		this.registerEvent(this.app.vault.on('modify', invalidateContentCaches));
+
+		// 検索索引の差分更新（索引構築済みのときのみ）
+		this.registerEvent(this.app.vault.on('modify', (file) => {
+			if (file instanceof TFile && this.searchIndex.hasDoc(file.path)) {
+				void this.updateSearchIndexForFile(file);
+			}
+		}));
+		this.registerEvent(this.app.vault.on('create', (file) => {
+			if (file instanceof TFile && this.searchIndex.isBuilt()) {
+				void this.updateSearchIndexForFile(file);
+			}
+		}));
+		this.registerEvent(this.app.vault.on('delete', (file) => {
+			if (file instanceof TFile && this.searchIndex.hasDoc(file.path)) {
+				this.searchIndex.removeDoc(file.path);
+				this.data.searchIndexDocCount = this.searchIndex.getDocCount();
+			}
+		}));
+		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+			if (file instanceof TFile && this.searchIndex.hasDoc(oldPath)) {
+				this.searchIndex.renameDoc(oldPath, file.path);
+			}
+		}));
 
 		// visibilitychange リスナー（アプリ復帰時にリモート変更を取り込む）
 		this.registerDomEvent(document, 'visibilitychange', () => {
@@ -180,6 +273,25 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		if (!this.data.filterPresets) {
 			this.data.filterPresets = [];
 		}
+
+		// いいね記録の初期化
+		if (!this.data.likedNotes) {
+			this.data.likedNotes = {};
+		}
+
+		// 検索索引関連フィールドの初期化
+		if (this.data.searchIndex === undefined) {
+			this.data.searchIndex = null;
+		}
+		if (this.data.searchIndexBuiltAt === undefined) {
+			this.data.searchIndexBuiltAt = null;
+		}
+		if (this.data.searchIndexDocCount === undefined) {
+			this.data.searchIndexDocCount = 0;
+		}
+
+		// シリアライズ済み索引から復元（未構築なら空のまま）
+		this.searchIndex = SearchIndex.deserialize(this.data.searchIndex);
 
 		// データ移行
 		await this.migrateData(loaded?.engineVersion ?? 1);
@@ -505,7 +617,7 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 	/**
 	 * タイムラインキャッシュを無効化
 	 */
-	private invalidateTimelineCache(): void {
+	invalidateTimelineCache(): void {
 		this.timelineCardsCache = null;
 	}
 
@@ -571,6 +683,25 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		);
 
 		await this.syncAndSave();
+	}
+
+	/**
+	 * ピン留め状態を切り替える（frontmatter `pinned` を反転）
+	 */
+	async togglePin(path: string): Promise<boolean> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (!file || !(file instanceof TFile)) return false;
+		let nowPinned = false;
+		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+			nowPinned = fm.pinned !== true;
+			if (nowPinned) {
+				fm.pinned = true;
+			} else {
+				delete fm.pinned;
+			}
+		});
+		this.invalidateTimelineCache();
+		return nowPinned;
 	}
 
 	/**
@@ -801,6 +932,115 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 		if (!this.data.filterPresets) return;
 		this.data.filterPresets = this.data.filterPresets.filter(p => p.id !== id);
 		await this.syncAndSave();
+	}
+
+	/**
+	 * 検索索引を全ノートから再構築
+	 */
+	async rebuildSearchIndex(): Promise<void> {
+		if (this.searchIndexRebuilding) {
+			new Notice('索引構築中です。完了までお待ちください。');
+			return;
+		}
+		this.searchIndexRebuilding = true;
+		const startedAt = Date.now();
+		new Notice('検索索引を構築中...');
+
+		try {
+			const files = enumerateTargetNotes(this.app, this.data.settings);
+			const texts: Array<{ path: string; text: string }> = [];
+
+			// 並列に本文抽出（concurrency 制限）
+			const extracted = await this.mapWithConcurrency(
+				files,
+				TimelineNoteLauncherPlugin.CREATE_CARD_CONCURRENCY,
+				async (file) => {
+					const text = await extractSearchableText(this.app, file);
+					return { path: file.path, text };
+				}
+			);
+			for (const item of extracted) {
+				if (item.text.trim().length > 0) {
+					texts.push(item);
+				}
+			}
+
+			this.searchIndex.build(texts);
+			const docCount = this.searchIndex.getDocCount();
+			this.data.searchIndex = this.searchIndex.serialize();
+			this.data.searchIndexBuiltAt = Date.now();
+			this.data.searchIndexDocCount = docCount;
+			await this.syncAndSave();
+
+			const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+			new Notice(`検索索引を構築しました (${docCount}件 / ${elapsed}秒)`);
+		} catch (error) {
+			console.error('Failed to rebuild search index:', error);
+			new Notice('索引構築に失敗しました。');
+		} finally {
+			this.searchIndexRebuilding = false;
+		}
+	}
+
+	/**
+	 * 単一ファイルの索引を差分更新
+	 */
+	private async updateSearchIndexForFile(file: TFile): Promise<void> {
+		try {
+			const text = await extractSearchableText(this.app, file);
+			if (text.trim().length === 0) {
+				this.searchIndex.removeDoc(file.path);
+			} else {
+				this.searchIndex.updateDoc(file.path, text);
+			}
+			this.data.searchIndexDocCount = this.searchIndex.getDocCount();
+			// 頻繁な更新での I/O を避けるため、シリアライズ保存は手動再構築時のみ
+		} catch (error) {
+			console.error('Failed to update search index for file:', file.path, error);
+		}
+	}
+
+	/**
+	 * 類似ノート検索モーダルを開く
+	 */
+	async openFindSimilarModal(): Promise<void> {
+		if (!this.searchIndex.isBuilt()) {
+			new Notice('検索索引が未構築です。設定から索引を構築してください。');
+			return;
+		}
+		const activeFile = this.app.workspace.getActiveFile();
+		if (!activeFile) {
+			new Notice('対象となるノートがアクティブではありません。');
+			return;
+		}
+		const queryText = await extractSearchableText(this.app, activeFile);
+		if (queryText.trim().length === 0) {
+			new Notice('対象ノートから検索テキストを抽出できませんでした。');
+			return;
+		}
+		new SimilarNotesModal(this.app, this, activeFile, queryText).open();
+	}
+
+	/**
+	 * ノートがいいね済みか判定
+	 */
+	isLiked(path: string): boolean {
+		return this.data.likedNotes[path] !== undefined;
+	}
+
+	/**
+	 * いいねをトグル（追加/解除）
+	 * @returns トグル後の状態（true=いいね中）
+	 */
+	async toggleLike(path: string): Promise<boolean> {
+		const liked = this.isLiked(path);
+		if (liked) {
+			delete this.data.likedNotes[path];
+		} else {
+			this.data.likedNotes[path] = Date.now();
+		}
+		await this.syncAndSave();
+		return !liked;
 	}
 
 	/**

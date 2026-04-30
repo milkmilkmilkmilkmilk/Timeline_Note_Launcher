@@ -60,6 +60,16 @@
 - lint: `npm run lint`
 - build検証: `npm run build`（型チェックが絡むため、lintが通ってもbuildが落ちるケースを残す） :contentReference[oaicite:29]{index=29}
 
+## 5.4 監査エラー台帳（必読）
+- 私は Obsidian 提出時の監査エラーを次の台帳へ一元記録する：
+  - `docs/community-plugins-json-fix.md`
+- 私は bot 指摘（`Required` / `Errors`）を受けたら24時間以内に台帳へ追記し、次を必ず更新する：
+  - 概要
+  - 原因
+  - 再発防止策
+  - 検証結果
+- 私は同種エラーを再発させた場合、新規ページを作らず台帳の既存エントリに発生履歴として追記する。
+
 ## 6. AI（Claude Code / Codex）への制約（破りやすい順）
 - 私は `manifest.json` の必須キー/禁止キー/ID制約を絶対に破らない。 :contentReference[oaicite:30]{index=30}
 - 私は `npm run lint` を必ず通す変更だけを採用する。 :contentReference[oaicite:31]{index=31}

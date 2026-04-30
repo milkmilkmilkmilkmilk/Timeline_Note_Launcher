@@ -65,12 +65,14 @@ export class TimelineView extends ItemView {
 	private touchEndHandler: (e: TouchEvent) => void;
 	private twitterDueOnly: boolean = false;
 	private twitterBookmarkedOnly: boolean = false;
+	private twitterLikedOnly: boolean = false;
 	private twitterFilterDrawerOpen: boolean = false;
 	private twitterFilterDrawerEl: HTMLElement | null = null;
 	private twitterFilterSearchInputEl: HTMLInputElement | null = null;
 	private twitterSearchButtons: HTMLButtonElement[] = [];
 	private twitterBellButtons: HTMLButtonElement[] = [];
 	private twitterBookmarkButtons: HTMLButtonElement[] = [];
+	private twitterHeartButtons: HTMLButtonElement[] = [];
 
 	constructor(leaf: WorkspaceLeaf, plugin: TimelineNoteLauncherPlugin) {
 		super(leaf);
@@ -273,7 +275,8 @@ export class TimelineView extends ItemView {
 // 説明: ブックマーク状態を更新する
 		this.cachedBookmarkedPaths = getBookmarkedPaths(this.app);
 
-// 説明: ブックマーク状態を更新する
+		// ユーザー操作によるリフレッシュはキャッシュを破棄して必ず再取得する
+		this.plugin.invalidateTimelineCache();
 		const result = await this.plugin.getTimelineCards();
 		this.cards = result.cards;
 		this.cachedAllTags = collectAllTags(this.cards);
@@ -662,6 +665,7 @@ export class TimelineView extends ItemView {
 		this.twitterSearchButtons = [];
 		this.twitterBellButtons = [];
 		this.twitterBookmarkButtons = [];
+		this.twitterHeartButtons = [];
 	}
 
 	private applyTwitterSecondaryFilters(cards: TimelineCard[]): TimelineCard[] {
@@ -678,6 +682,12 @@ export class TimelineView extends ItemView {
 			this.cachedBookmarkedPaths = bookmarked;
 			filtered = filtered.filter((card) => bookmarked.has(card.path));
 		}
+		if (this.twitterLikedOnly) {
+			const likedNotes = this.plugin.data.likedNotes;
+			filtered = filtered
+				.filter((card) => likedNotes[card.path] !== undefined)
+				.sort((a, b) => (likedNotes[b.path] ?? 0) - (likedNotes[a.path] ?? 0));
+		}
 		return filtered;
 	}
 
@@ -690,6 +700,9 @@ export class TimelineView extends ItemView {
 		}
 		for (const btn of this.twitterBookmarkButtons) {
 			btn.classList.toggle('is-active', this.twitterBookmarkedOnly);
+		}
+		for (const btn of this.twitterHeartButtons) {
+			btn.classList.toggle('is-active', this.twitterLikedOnly);
 		}
 	}
 
@@ -765,7 +778,7 @@ export class TimelineView extends ItemView {
 		icon: string,
 		label: string,
 		onClick: (event: MouseEvent) => void,
-		tracker: 'search' | 'bell' | 'bookmark' | null = null,
+		tracker: 'search' | 'bell' | 'bookmark' | 'heart' | null = null,
 	): HTMLButtonElement {
 		const btn = container.createEl('button', {
 			cls: 'timeline-twitter-shortcut-btn',
@@ -784,6 +797,8 @@ export class TimelineView extends ItemView {
 			this.twitterBellButtons.push(btn);
 		} else if (tracker === 'bookmark') {
 			this.twitterBookmarkButtons.push(btn);
+		} else if (tracker === 'heart') {
+			this.twitterHeartButtons.push(btn);
 		}
 
 		return btn;
@@ -806,6 +821,7 @@ export class TimelineView extends ItemView {
 		this.createTwitterShortcutButton(container, 'home', 'Home', () => {
 			this.twitterDueOnly = false;
 			this.twitterBookmarkedOnly = false;
+			this.twitterLikedOnly = false;
 			this.setTwitterFilterDrawerState(false, false);
 			void this.renderCardList();
 		});
@@ -820,6 +836,10 @@ export class TimelineView extends ItemView {
 			this.twitterBookmarkedOnly = !this.twitterBookmarkedOnly;
 			void this.renderCardList();
 		}, 'bookmark');
+		this.createTwitterShortcutButton(container, 'heart', 'Likes only', () => {
+			this.twitterLikedOnly = !this.twitterLikedOnly;
+			void this.renderCardList();
+		}, 'heart');
 		this.createTwitterShortcutButton(container, 'feather', 'Compose', () => {
 			void this.handleTwitterFeatherAction();
 		});
@@ -1142,8 +1162,11 @@ export class TimelineView extends ItemView {
 			openNote: (card) => this.openNote(card),
 			isFileBookmarked: (path) => this.isFileBookmarked(path),
 			toggleBookmark: (path) => this.toggleBookmark(path),
+			isLiked: (path) => this.plugin.isLiked(path),
+			toggleLike: (path) => this.plugin.toggleLike(path),
 			applySrsCountDelta: (deltaNew, deltaDue) => this.applySrsCountDelta(deltaNew, deltaDue),
 			refresh: () => this.refresh(),
+			createQuickNote: (content) => this.createQuickNote(content),
 		};
 	}
 

@@ -1,9 +1,12 @@
 // Timeline Note Launcher - Filter Bar
 // timelineView.ts から抽出されたフィルターバー関連のロジック
+import { Notice, TFolder } from 'obsidian';
 import type { App } from 'obsidian';
 import type { TimelineCard, FilterPreset } from './types';
 import type TimelineNoteLauncherPlugin from './main';
 import { TextInputModal } from './textInputModal';
+
+export type SearchMode = 'metadata' | 'content';
 
 /**
  * フィルター状態
@@ -16,6 +19,9 @@ export interface FilterBarState {
 	dateFilterEnd: string;
 	isTagsCollapsed: boolean;
 	searchDebounceTimer: number | null;
+	searchMode: SearchMode;
+	// Content モード時のスコア降順 path 集合（最後に実行した検索の結果）
+	contentMatchedPaths: Set<string> | null;
 }
 
 /**
@@ -44,6 +50,8 @@ export function createDefaultFilterBarState(): FilterBarState {
 		dateFilterEnd: '',
 		isTagsCollapsed: false,
 		searchDebounceTimer: null,
+		searchMode: 'metadata',
+		contentMatchedPaths: null,
 	};
 }
 
@@ -85,12 +93,19 @@ export function applyFilters(cards: TimelineCard[], state: FilterBarState): Time
 
 		// 検索クエリフィルタ
 		if (state.searchQuery.trim()) {
-			const query = state.searchQuery.toLowerCase();
-			const titleMatch = card.title.toLowerCase().includes(query);
-			const previewMatch = card.preview.toLowerCase().includes(query);
-			const tagMatch = card.tags.some(tag => tag.toLowerCase().includes(query));
-			if (!titleMatch && !previewMatch && !tagMatch) {
-				return false;
+			if (state.searchMode === 'content') {
+				// 内容検索モード: 事前計算された索引検索結果で絞り込む
+				if (!state.contentMatchedPaths || !state.contentMatchedPaths.has(card.path)) {
+					return false;
+				}
+			} else {
+				const query = state.searchQuery.toLowerCase();
+				const titleMatch = card.title.toLowerCase().includes(query);
+				const previewMatch = card.preview.toLowerCase().includes(query);
+				const tagMatch = card.tags.some(tag => tag.toLowerCase().includes(query));
+				if (!titleMatch && !previewMatch && !tagMatch) {
+					return false;
+				}
 			}
 		}
 
@@ -154,7 +169,7 @@ export function renderFilterBar(ctx: FilterBarContext): void {
 		cls: 'timeline-search-input',
 		attr: {
 			type: 'text',
-			placeholder: 'Search...',
+			placeholder: ctx.state.searchMode === 'content' ? 'Search content...' : 'Search...',
 			value: ctx.state.searchQuery,
 		},
 	});
@@ -162,6 +177,34 @@ export function renderFilterBar(ctx: FilterBarContext): void {
 		const value = (e.target as HTMLInputElement).value;
 		handleSearchInput(ctx, value);
 	});
+	const modeToggleBtn = searchSection.createEl('button', {
+		cls: `timeline-search-mode-btn ${ctx.state.searchMode === 'content' ? 'is-content' : ''}`,
+		text: ctx.state.searchMode === 'content' ? '📄' : '🏷',
+		attr: {
+			'aria-label': ctx.state.searchMode === 'content' ? 'Switch to metadata search' : 'Switch to content search',
+			title: ctx.state.searchMode === 'content' ? '内容検索中（クリックでメタデータ検索へ）' : 'メタデータ検索中（クリックで内容検索へ）',
+		},
+	});
+	modeToggleBtn.addEventListener('click', () => {
+		if (ctx.state.searchMode === 'metadata') {
+			if (!ctx.plugin.searchIndex.isBuilt()) {
+				new Notice('検索索引が未構築です。設定から索引を構築してください。');
+				return;
+			}
+			ctx.state.searchMode = 'content';
+		} else {
+			ctx.state.searchMode = 'metadata';
+		}
+		ctx.state.contentMatchedPaths = null;
+		if (ctx.state.searchQuery.trim()) {
+			recomputeContentMatches(ctx);
+		}
+		ctx.onFilterChanged();
+		void ctx.render();
+	});
+
+	// フォルダーソースセクション
+	renderFolderSourceSection(ctx, filterBar);
 
 	// 日付範囲フィルタ
 	const dateSection = filterBar.createDiv({ cls: 'timeline-filter-dates' });
@@ -280,6 +323,56 @@ export function renderFilterBar(ctx: FilterBarContext): void {
 }
 
 /**
+ * フォルダーソースセクションを描画
+ */
+function renderFolderSourceSection(ctx: FilterBarContext, container: HTMLElement): void {
+	const topFolders = ctx.app.vault.getRoot().children
+		.filter((child): child is TFolder => child instanceof TFolder)
+		.sort((a, b) => a.name.localeCompare(b.name));
+
+	if (topFolders.length === 0) return;
+
+	const section = container.createDiv({ cls: 'timeline-filter-folders' });
+	section.createSpan({ cls: 'timeline-filter-folders-label', text: 'Source:' });
+
+	const currentFolders = ctx.plugin.data.settings.targetFolders;
+
+	const allBtn = section.createEl('button', {
+		cls: `timeline-folder-chip ${currentFolders.length === 0 ? 'is-active' : ''}`,
+		text: 'All',
+		attr: { 'aria-label': 'Show all folders', 'aria-pressed': String(currentFolders.length === 0) },
+	});
+	allBtn.addEventListener('click', () => {
+		ctx.plugin.data.settings.targetFolders = [];
+		void saveFolderFilterAndRefresh(ctx);
+	});
+
+	for (const folder of topFolders) {
+		const isActive = currentFolders.includes(folder.path);
+		const chip = section.createEl('button', {
+			cls: `timeline-folder-chip ${isActive ? 'is-active' : ''}`,
+			text: folder.name,
+			attr: { 'aria-label': `Filter by folder: ${folder.name}`, 'aria-pressed': String(isActive) },
+		});
+		chip.addEventListener('click', () => {
+			const folders = ctx.plugin.data.settings.targetFolders;
+			const idx = folders.indexOf(folder.path);
+			if (idx >= 0) {
+				folders.splice(idx, 1);
+			} else {
+				folders.push(folder.path);
+			}
+			void saveFolderFilterAndRefresh(ctx);
+		});
+	}
+}
+
+async function saveFolderFilterAndRefresh(ctx: FilterBarContext): Promise<void> {
+	await ctx.plugin.saveData(ctx.plugin.data);
+	ctx.plugin.refreshAllViews();
+}
+
+/**
  * フィルタープリセットを描画
  */
 function renderFilterPresets(ctx: FilterBarContext, container: HTMLElement): void {
@@ -351,6 +444,9 @@ function loadFilterPreset(ctx: FilterBarContext, preset: FilterPreset): void {
 	ctx.state.selectedTags = new Set(preset.selectedTags);
 	ctx.state.dateFilterStart = preset.dateFilterStart;
 	ctx.state.dateFilterEnd = preset.dateFilterEnd;
+	if (ctx.state.searchMode === 'content') {
+		recomputeContentMatches(ctx);
+	}
 	void ctx.render();
 }
 
@@ -370,8 +466,28 @@ function handleSearchInput(ctx: FilterBarContext, query: string): void {
 			return;
 		}
 		ctx.state.searchQuery = query;
+		if (ctx.state.searchMode === 'content') {
+			recomputeContentMatches(ctx);
+		}
 		ctx.onFilterChanged();
 	}, 300);
+}
+
+/**
+ * 内容検索モードでクエリから索引を引いて一致 path 集合を計算
+ */
+function recomputeContentMatches(ctx: FilterBarContext): void {
+	const trimmed = ctx.state.searchQuery.trim();
+	if (!trimmed) {
+		ctx.state.contentMatchedPaths = null;
+		return;
+	}
+	if (!ctx.plugin.searchIndex.isBuilt()) {
+		ctx.state.contentMatchedPaths = new Set();
+		return;
+	}
+	const hits = ctx.plugin.searchIndex.search(trimmed, 500);
+	ctx.state.contentMatchedPaths = new Set(hits.map(h => h.path));
 }
 
 /**

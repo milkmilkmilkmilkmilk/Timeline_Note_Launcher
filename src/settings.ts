@@ -2,7 +2,7 @@
 import { App, Modal, PluginSettingTab, Setting } from 'obsidian';
 import type TimelineNoteLauncherPlugin from './main';
 import { calculateStatistics, ReviewStatistics } from './dataLayer';
-import { buildTargetNotesSection, buildSelectionModeSection, buildDisplaySection, buildYamlIntegrationSection, buildTemplateSection, buildBehaviorSection } from './settingSections';
+import { buildTargetNotesSection, buildSelectionModeSection, buildDisplaySection, buildYamlIntegrationSection, buildTemplateSection, buildBehaviorSection, buildSearchIndexSection } from './settingSections';
 import type { SettingSectionContext } from './settingSections';
 
 /**
@@ -100,6 +100,7 @@ export class TimelineSettingTab extends PluginSettingTab {
 		buildYamlIntegrationSection(ctx);
 		buildTemplateSection(ctx);
 		buildBehaviorSection(ctx);
+		buildSearchIndexSection(ctx);
 
 		// === 統計 ===
 		new Setting(containerEl).setName('Statistics').setHeading();

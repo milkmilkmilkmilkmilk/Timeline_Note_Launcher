@@ -1,6 +1,6 @@
 // Timeline Note Launcher - Card Renderer
 // timelineView.ts から抽出されたカードレンダリングロジック
-import { TFile, Menu, setIcon } from 'obsidian';
+import { TFile, Menu, Notice, setIcon } from 'obsidian';
 import type { App } from 'obsidian';
 import type { TimelineCard, DifficultyRating } from './types';
 import type TimelineNoteLauncherPlugin from './main';
@@ -9,6 +9,7 @@ import { renderOfficeFallback } from './embedRenderers';
 import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
 import { LinkNoteModal } from './linkNoteModal';
+import { QuickNoteModal } from './quickNoteModal';
 import { getNextIntervals } from './dataLayer';
 import { formatRelativeDate, getFileTypeIcon, formatPropertyValue } from './timelineViewUtils';
 
@@ -67,13 +68,16 @@ export interface CardRenderContext {
 	openNote(card: TimelineCard): Promise<void>;
 	isFileBookmarked(path: string): boolean;
 	toggleBookmark(path: string): boolean;
+	isLiked(path: string): boolean;
+	toggleLike(path: string): Promise<boolean>;
 	applySrsCountDelta(deltaNew: number, deltaDue: number): void;
 	refresh(): Promise<void>;
+	createQuickNote(content: string): Promise<void>;
 }
 
 /**
  * 三点メニューボタンのクリックハンドラー
- * ノートを開き、そのリーフの "more-options" ファイルメニューを表示する
+ * ノートは開かず、ファイルメニューのみをボタン直下に表示する
  */
 function handleMoreOptionsClick(
 	ctx: CardRenderContext,
@@ -83,13 +87,10 @@ function handleMoreOptionsClick(
 	const file = ctx.app.vault.getAbstractFileByPath(card.path);
 	if (!file || !(file instanceof TFile)) return;
 
-	void ctx.openNote(card).then(() => {
-		const leaf = ctx.app.workspace.getMostRecentLeaf();
-		const menu = new Menu();
-		ctx.app.workspace.trigger('file-menu', menu, file, 'more-options', leaf);
-		const rect = buttonEl.getBoundingClientRect();
-		menu.showAtPosition({ x: rect.right, y: rect.bottom });
-	});
+	const menu = new Menu();
+	ctx.app.workspace.trigger('file-menu', menu, file, 'file-explorer-context-menu', null);
+	const rect = buttonEl.getBoundingClientRect();
+	menu.showAtPosition({ x: rect.right, y: rect.bottom });
 }
 
 /**
@@ -192,6 +193,228 @@ function getTwitterSrsLabel(card: TimelineCard): string {
 	return 'Reviewed';
 }
 
+/**
+ * タイムライン上のカードでインライン編集モードに入る。
+ * preview 領域を textarea に差し替え、Ctrl+Enter で保存、Esc でキャンセル。
+ */
+function enterInlineEditMode(
+	ctx: CardRenderContext,
+	card: TimelineCard,
+	previewEl: HTMLElement,
+	cardEl: HTMLElement,
+): void {
+	const file = ctx.app.vault.getAbstractFileByPath(card.path);
+	if (!file || !(file instanceof TFile)) return;
+	if (cardEl.classList.contains('timeline-card-editing')) return;
+
+	// 保留中の markdown レンダリングがあると textarea が上書きされるので除去
+	for (let i = ctx.pendingMarkdownRenders.length - 1; i >= 0; i--) {
+		if (ctx.pendingMarkdownRenders[i]?.previewEl === previewEl) {
+			ctx.pendingMarkdownRenders.splice(i, 1);
+		}
+	}
+
+	cardEl.addClass('timeline-card-editing');
+	previewEl.empty();
+	previewEl.removeClass('timeline-card-preview-pending');
+
+	const editorWrap = previewEl.createDiv({ cls: 'timeline-card-edit-wrap' });
+	const textarea = editorWrap.createEl('textarea', {
+		cls: 'timeline-card-edit-textarea',
+		attr: { spellcheck: 'false' },
+	});
+	const controls = editorWrap.createDiv({ cls: 'timeline-card-edit-controls' });
+	controls.createSpan({
+		cls: 'timeline-card-edit-hint',
+		text: 'Ctrl+Enter: save / Esc: cancel',
+	});
+	const cancelBtn = controls.createEl('button', {
+		cls: 'timeline-card-edit-cancel',
+		text: 'Cancel',
+	});
+	const saveBtn = controls.createEl('button', {
+		cls: 'timeline-card-edit-save mod-cta',
+		text: 'Save',
+	});
+
+	let isSaving = false;
+	const exit = (): void => {
+		cardEl.removeClass('timeline-card-editing');
+		ctx.plugin.invalidateTimelineCache();
+		void ctx.refresh();
+	};
+	const save = async (): Promise<void> => {
+		if (isSaving) return;
+		isSaving = true;
+		try {
+			await ctx.app.vault.modify(file, textarea.value);
+			new Notice('Saved');
+			exit();
+		} catch (error) {
+			console.error('Failed to save note:', error);
+			new Notice('Failed to save note');
+			isSaving = false;
+		}
+	};
+
+	cancelBtn.addEventListener('click', (event) => {
+		event.stopPropagation();
+		exit();
+	});
+	saveBtn.addEventListener('click', (event) => {
+		event.stopPropagation();
+		void save();
+	});
+	textarea.addEventListener('click', (event) => event.stopPropagation());
+	textarea.addEventListener('keydown', (event) => {
+		event.stopPropagation();
+		if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+			event.preventDefault();
+			void save();
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			exit();
+		}
+	});
+
+	void ctx.app.vault.read(file).then((content) => {
+		textarea.value = content;
+		textarea.focus();
+		textarea.setSelectionRange(content.length, content.length);
+	}).catch((error: unknown) => {
+		console.error('Failed to read note for editing:', error);
+		new Notice('Failed to load note content');
+		exit();
+	});
+}
+
+/**
+ * Twitter V2 下部アクションバーの More メニューを構築して表示する
+ */
+function populateTwitterV2MoreMenu(
+	ctx: CardRenderContext,
+	card: TimelineCard,
+	event: MouseEvent,
+): void {
+	const file = ctx.app.vault.getAbstractFileByPath(card.path);
+	const tfile = file instanceof TFile ? file : null;
+
+	const menu = new Menu();
+
+	menu.addItem((item) => item
+		.setTitle('Open note')
+		.setIcon('file-text')
+		.onClick(() => { void ctx.openNote(card); }));
+	menu.addItem((item) => item
+		.setTitle('Open file menu')
+		.setIcon('menu')
+		.onClick(() => {
+			if (!tfile) return;
+			const fileMenu = new Menu();
+			ctx.app.workspace.trigger('file-menu', fileMenu, tfile, 'file-explorer-context-menu', null);
+			fileMenu.showAtMouseEvent(event);
+		}));
+
+	menu.addSeparator();
+
+	menu.addItem((item) => item
+		.setTitle(card.pinned ? 'Unpin' : 'Pin')
+		.setIcon('pin')
+		.onClick(() => {
+			if (!tfile) return;
+			void ctx.plugin.togglePin(card.path)
+				.then(() => ctx.refresh())
+				.catch((error: unknown) => {
+					console.error('Failed to toggle pin:', error);
+					new Notice('Failed to toggle pin');
+				});
+		}));
+
+	menu.addSeparator();
+
+	const ratings: { label: string; rating: DifficultyRating }[] = [
+		{ label: 'Rate: Again', rating: 'again' },
+		{ label: 'Rate: Hard', rating: 'hard' },
+		{ label: 'Rate: Good', rating: 'good' },
+		{ label: 'Rate: Easy', rating: 'easy' },
+	];
+	for (const { label, rating } of ratings) {
+		menu.addItem((item) => item
+			.setTitle(label)
+			.setIcon('star')
+			.onClick(() => {
+				void ctx.plugin.rateCard(card.path, rating)
+					.then(() => {
+						ctx.applySrsCountDelta(card.isNew ? -1 : 0, card.isDue ? -1 : 0);
+						return ctx.refresh();
+					})
+					.catch((error: unknown) => {
+						console.error(`Failed to rate card as ${rating}:`, error);
+					});
+			}));
+	}
+
+	menu.addSeparator();
+
+	menu.addItem((item) => item
+		.setTitle('Link note')
+		.setIcon('link')
+		.onClick(() => {
+			if (!tfile) return;
+			new LinkNoteModal(ctx.app, ctx.plugin, tfile).open();
+		}));
+	menu.addItem((item) => item
+		.setTitle('Quick note')
+		.setIcon('pencil')
+		.onClick(() => {
+			const modal = new QuickNoteModal(ctx.app, async (content) => {
+				const next = content.trim();
+				if (next.length === 0) {
+					throw new Error('Quick note content is empty.');
+				}
+				await ctx.createQuickNote(next);
+				await ctx.refresh();
+			});
+			modal.open();
+		}));
+
+	menu.addSeparator();
+
+	menu.addItem((item) => item
+		.setTitle('Reveal in file explorer')
+		.setIcon('folder-open')
+		.onClick(() => {
+			if (!tfile) return;
+			// 備考: file-explorer は内部プラグイン。公開 API が無いため internal API を使用
+			const internal = (ctx.app as unknown as {
+				internalPlugins?: {
+					plugins?: Record<string, { enabled?: boolean; instance?: { revealInFolder?: (file: TFile) => void } }>;
+				};
+			}).internalPlugins;
+			const explorer = internal?.plugins?.['file-explorer'];
+			if (explorer?.enabled && typeof explorer.instance?.revealInFolder === 'function') {
+				explorer.instance.revealInFolder(tfile);
+			} else {
+				new Notice('File explorer is not enabled');
+			}
+		}));
+	menu.addItem((item) => item
+		.setTitle('Copy link to note')
+		.setIcon('copy')
+		.onClick(() => {
+			if (!tfile) return;
+			const link = ctx.app.fileManager.generateMarkdownLink(tfile, '');
+			void navigator.clipboard.writeText(link)
+				.then(() => new Notice('Link copied'))
+				.catch((error: unknown) => {
+					console.error('Failed to copy link:', error);
+					new Notice('Failed to copy link');
+				});
+		}));
+
+	menu.showAtMouseEvent(event);
+}
+
 function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard): HTMLElement {
 	const settings = ctx.plugin.data.settings;
 	const cardEl = createDiv({ cls: ['timeline-card', `timeline-card-type-${card.fileType}`, 'timeline-twitter-v2-card'] });
@@ -218,12 +441,64 @@ function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard):
 			text: propsTitle,
 		});
 	}
+	// タイトル直下にフォルダパスを表示（ノートの所在が一目で分かるように）
+	const folderPath = card.path.includes('/') ? card.path.substring(0, card.path.lastIndexOf('/')) : '';
+	userMetaEl.createDiv({
+		cls: 'timeline-twitter-card-path',
+		text: `\u{1F4C1} ${folderPath || 'Root'}`,
+	});
 
 	const timestamp = card.createdAt ?? card.lastReviewedAt;
 	headerEl.createDiv({
 		cls: 'timeline-twitter-card-date',
 		text: timestamp ? new Date(timestamp).toLocaleDateString() : '',
 	});
+
+	// ヘッダー用の Comment / Quote note ボタン（ノートを読みながら素早くメモを書けるように）
+	const headerCommentBtn = headerEl.createEl('button', {
+		cls: 'timeline-twitter-v2-header-action timeline-twitter-v2-header-comment',
+		attr: { 'aria-label': 'Comment' },
+	});
+	setIcon(headerCommentBtn, 'message-circle');
+	if (ctx.plugin.hasCommentDraft(card.path)) {
+		headerCommentBtn.addClass('has-draft');
+	}
+	headerCommentBtn.addEventListener('click', (event) => {
+		event.stopPropagation();
+		const file = ctx.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			new CommentModal(ctx.app, ctx.plugin, file).open();
+		}
+	});
+
+	const headerQuoteBtn = headerEl.createEl('button', {
+		cls: 'timeline-twitter-v2-header-action timeline-twitter-v2-header-quote',
+		attr: { 'aria-label': 'Quote note' },
+	});
+	setIcon(headerQuoteBtn, 'repeat');
+	if (ctx.plugin.hasQuoteNoteDraft(card.path)) {
+		headerQuoteBtn.addClass('has-draft');
+	}
+	headerQuoteBtn.addEventListener('click', (event) => {
+		event.stopPropagation();
+		const file = ctx.app.vault.getAbstractFileByPath(card.path);
+		if (file && file instanceof TFile) {
+			new QuoteNoteModal(ctx.app, ctx.plugin, file).open();
+		}
+	});
+
+	// インライン編集ボタン（markdown のみ対象）
+	if (card.fileType === 'markdown') {
+		const headerEditBtn = headerEl.createEl('button', {
+			cls: 'timeline-twitter-v2-header-action timeline-twitter-v2-header-edit',
+			attr: { 'aria-label': 'Edit inline' },
+		});
+		setIcon(headerEditBtn, 'pencil');
+		headerEditBtn.addEventListener('click', (event) => {
+			event.stopPropagation();
+			enterInlineEditMode(ctx, card, previewEl, cardEl);
+		});
+	}
 
 	headerEl.appendChild(createMoreOptionsButton(ctx, card, 'timeline-twitter-v2-header-more'));
 
@@ -267,16 +542,19 @@ function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard):
 			new QuoteNoteModal(ctx.app, ctx.plugin, file).open();
 		}
 	});
-	createTwitterActionButton(actionsEl, 'heart', 'Good rating', () => {
-		void ctx.plugin.rateCard(card.path, 'good')
-			.then(() => {
-				ctx.applySrsCountDelta(card.isNew ? -1 : 0, card.isDue ? -1 : 0);
-				return ctx.refresh();
+	const likeAction = createTwitterActionButton(actionsEl, 'heart', 'Like', () => {
+		void ctx.toggleLike(card.path)
+			.then((nowLiked) => {
+				likeAction.classList.toggle('is-liked', nowLiked);
+				likeAction.setAttribute('aria-label', nowLiked ? 'Unlike' : 'Like');
 			})
 			.catch((error: unknown) => {
-				console.error('Failed to apply good rating from Twitter action:', error);
+				console.error('Failed to toggle like:', error);
 			});
 	});
+	const initiallyLiked = ctx.isLiked(card.path);
+	likeAction.classList.toggle('is-liked', initiallyLiked);
+	likeAction.setAttribute('aria-label', initiallyLiked ? 'Unlike' : 'Like');
 	createTwitterActionButton(actionsEl, 'share', 'Link note', () => {
 		const file = ctx.app.vault.getAbstractFileByPath(card.path);
 		if (file && file instanceof TFile) {
@@ -294,16 +572,7 @@ function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard):
 	bookmarkAction.setAttribute('aria-label', initiallyBookmarked ? 'Remove bookmark' : 'Add bookmark');
 
 	createTwitterActionButton(actionsEl, 'more-horizontal', 'More', (event) => {
-		const menu = new Menu();
-		menu.addItem((item) => item.setTitle('Open note').onClick(() => { void ctx.openNote(card); }));
-		menu.addItem((item) => item.setTitle('Open file menu').onClick(() => {
-			const file = ctx.app.vault.getAbstractFileByPath(card.path);
-			if (!file || !(file instanceof TFile)) return;
-			const fileMenu = new Menu();
-			ctx.app.workspace.trigger('file-menu', fileMenu, file, 'file-explorer-context-menu', null);
-			fileMenu.showAtMouseEvent(event);
-		}));
-		menu.showAtMouseEvent(event);
+		populateTwitterV2MoreMenu(ctx, card, event);
 	}, 'timeline-twitter-v2-action-overflow');
 
 	if (settings.twitterShowSrsInActions) {
@@ -314,10 +583,12 @@ function createTwitterV2CardElement(ctx: CardRenderContext, card: TimelineCard):
 	}
 
 	contentEl.addEventListener('click', () => {
+		if (cardEl.classList.contains('timeline-card-editing')) return;
 		if (hasActiveSelectionWithin(contentEl)) return;
 		void ctx.openNote(card);
 	});
 	cardEl.addEventListener('contextmenu', (event) => {
+		if (cardEl.classList.contains('timeline-card-editing')) return;
 		if (hasActiveSelectionWithin(contentEl)) return;
 		event.preventDefault();
 		const file = ctx.app.vault.getAbstractFileByPath(card.path);
@@ -529,8 +800,14 @@ export function createCardElement(ctx: CardRenderContext, card: TimelineCard): H
 
 	titleRow.appendChild(createMoreOptionsButton(ctx, card, 'timeline-classic-more-options'));
 
-	// プレビュー（Canvas/Officeは埋め込みのみ表示するためスキップ）
-	if (card.fileType !== 'canvas' && card.fileType !== 'office') {
+	// パス表示（タイトル下）
+	contentEl.createDiv({
+		cls: 'timeline-card-path',
+		text: card.path,
+	});
+
+	// プレビュー（Officeは埋め込みのみ表示するためスキップ）
+	if (card.fileType !== 'office') {
 		const previewEl = contentEl.createDiv({ cls: 'timeline-card-preview' });
 		if (card.fileType === 'markdown' || card.fileType === 'ipynb') {
 			// プレースホルダーを即座に描画（Markdownレンダリングは遅延実行）
@@ -912,6 +1189,12 @@ export function createGridCardElement(ctx: CardRenderContext, card: TimelineCard
 	if (card.isDue) {
 		titleEl.createSpan({ cls: 'timeline-badge timeline-badge-due', text: 'DUE' });
 	}
+
+	// パス表示（タイトル下）
+	infoEl.createDiv({
+		cls: 'timeline-grid-card-path',
+		text: card.path,
+	});
 
 	// タグ（最大2つまで表示）
 	if (card.tags.length > 0) {

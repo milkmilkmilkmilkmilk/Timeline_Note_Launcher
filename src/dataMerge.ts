@@ -8,6 +8,7 @@ import type {
 	CommentDrafts,
 	QuoteNoteDrafts,
 	FilterPreset,
+	LikedNotes,
 } from './types';
 import { DEFAULT_DATA } from './types';
 
@@ -144,8 +145,22 @@ export function mergePluginData(local: PluginData, remote: PluginData): PluginDa
 		commentDrafts: mergeCommentDrafts(local.commentDrafts, remote.commentDrafts),
 		quoteNoteDrafts: mergeQuoteNoteDrafts(local.quoteNoteDrafts, remote.quoteNoteDrafts),
 		filterPresets: mergeFilterPresets(local.filterPresets, remote.filterPresets),
+		likedNotes: mergeLikedNotes(local.likedNotes, remote.likedNotes),
+		// 検索索引はローカルのみに属する大容量データなので常にローカル優先
+		searchIndex: local.searchIndex,
+		searchIndexBuiltAt: local.searchIndexBuiltAt,
+		searchIndexDocCount: local.searchIndexDocCount,
 		engineVersion: Math.max(local.engineVersion, remote.engineVersion),
 	};
+}
+
+/**
+ * いいねをマージ
+ * ローカルを常に優先（同期対象外の単一デバイス状態）。
+ * 和集合にすると解除が消えてしまうため、ローカル状態をそのまま採用する。
+ */
+export function mergeLikedNotes(local: LikedNotes, _remote: LikedNotes): LikedNotes {
+	return { ...local };
 }
 
 /**
@@ -187,6 +202,18 @@ export function reconstructFullData(diskData: Partial<PluginData> | null): Plugi
 	}
 	if (!base.filterPresets) {
 		base.filterPresets = [];
+	}
+	if (!base.likedNotes) {
+		base.likedNotes = {};
+	}
+	if (base.searchIndex === undefined) {
+		base.searchIndex = null;
+	}
+	if (base.searchIndexBuiltAt === undefined) {
+		base.searchIndexBuiltAt = null;
+	}
+	if (base.searchIndexDocCount === undefined) {
+		base.searchIndexDocCount = 0;
 	}
 	return base;
 }

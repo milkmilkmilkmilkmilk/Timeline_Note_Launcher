@@ -624,3 +624,38 @@ export function buildBehaviorSection(ctx: SettingSectionContext): void {
 				await ctx.plugin.syncAndSave();
 			}));
 }
+
+/**
+ * 検索索引（内容ベース検索）セクション
+ */
+export function buildSearchIndexSection(ctx: SettingSectionContext): void {
+	new Setting(ctx.containerEl).setName('Content search').setHeading();
+
+	const built = ctx.plugin.searchIndex.isBuilt();
+	const builtAt = ctx.plugin.data.searchIndexBuiltAt;
+	const docCount = ctx.plugin.data.searchIndexDocCount ?? 0;
+	const statusText = built
+		? `索引済み: ${docCount}件 / 最終構築: ${builtAt ? new Date(builtAt).toLocaleString() : '不明'}`
+		: '索引未構築';
+
+	new Setting(ctx.containerEl)
+		.setName('Search index status')
+		.setDesc(statusText);
+
+	new Setting(ctx.containerEl)
+		.setName('Rebuild search index')
+		// eslint-disable-next-line obsidianmd/ui/sentence-case -- Japanese description, BM25 is algorithm name
+		.setDesc('全ノートを走査して BM25 検索索引を再構築します（時間がかかります）。')
+		.addButton(button => button
+			.setButtonText(built ? 'Rebuild' : 'Build')
+			.setCta()
+			.onClick(async () => {
+				button.setDisabled(true);
+				button.setButtonText('Building...');
+				try {
+					await ctx.plugin.rebuildSearchIndex();
+				} finally {
+					ctx.redisplay();
+				}
+			}));
+}
