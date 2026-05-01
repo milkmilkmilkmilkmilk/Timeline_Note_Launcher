@@ -10,6 +10,7 @@ import { CommentModal } from './commentModal';
 import { QuoteNoteModal } from './quoteNoteModal';
 import { LinkNoteModal } from './linkNoteModal';
 import { QuickNoteModal } from './quickNoteModal';
+import { MoveFolderModal } from './moveFolderModal';
 import { getNextIntervals } from './dataLayer';
 import { formatRelativeDate, getFileTypeIcon, formatPropertyValue } from './timelineViewUtils';
 
@@ -88,7 +89,44 @@ function handleMoreOptionsClick(
 	if (!file || !(file instanceof TFile)) return;
 
 	const menu = new Menu();
-	ctx.app.workspace.trigger('file-menu', menu, file, 'file-explorer-context-menu', null);
+
+	menu.addItem((item) => item
+		.setTitle('Open note')
+		.setIcon('file-text')
+		.onClick(() => { void ctx.openNote(card); }));
+	menu.addItem((item) => item
+		.setTitle('Move to folder')
+		.setIcon('folder-input')
+		.onClick(() => {
+			new MoveFolderModal(ctx.app, file, () => ctx.refresh()).open();
+		}));
+
+	menu.addSeparator();
+
+	menu.addItem((item) => item
+		.setTitle(card.pinned ? 'Unpin' : 'Pin')
+		.setIcon('pin')
+		.onClick(() => {
+			void ctx.plugin.togglePin(card.path)
+				.then(() => ctx.refresh())
+				.catch((error: unknown) => {
+					console.error('Failed to toggle pin:', error);
+					new Notice('Failed to toggle pin');
+				});
+		}));
+
+	menu.addSeparator();
+
+	menu.addItem((item) => item
+		.setTitle('Open file menu')
+		.setIcon('menu')
+		.onClick(() => {
+			const fileMenu = new Menu();
+			const rect2 = buttonEl.getBoundingClientRect();
+			ctx.app.workspace.trigger('file-menu', fileMenu, file, 'file-explorer-context-menu', null);
+			fileMenu.showAtPosition({ x: rect2.right, y: rect2.bottom });
+		}));
+
 	const rect = buttonEl.getBoundingClientRect();
 	menu.showAtPosition({ x: rect.right, y: rect.bottom });
 }
@@ -328,6 +366,13 @@ function populateTwitterV2MoreMenu(
 					console.error('Failed to toggle pin:', error);
 					new Notice('Failed to toggle pin');
 				});
+		}));
+	menu.addItem((item) => item
+		.setTitle('Move to folder')
+		.setIcon('folder-input')
+		.onClick(() => {
+			if (!tfile) return;
+			new MoveFolderModal(ctx.app, tfile, () => ctx.refresh()).open();
 		}));
 
 	menu.addSeparator();
@@ -899,7 +944,8 @@ export function createCardElement(ctx: CardRenderContext, card: TimelineCard): H
 					e.stopPropagation();
 					const file = ctx.app.vault.getAbstractFileByPath(link.path);
 					if (file && file instanceof TFile) {
-						void ctx.app.workspace.getLeaf().openFile(file);
+						const leaf = ctx.app.workspace.getMostRecentLeaf() ?? ctx.app.workspace.getLeaf('tab');
+						void leaf.openFile(file);
 					}
 				});
 			}
@@ -925,7 +971,8 @@ export function createCardElement(ctx: CardRenderContext, card: TimelineCard): H
 					e.stopPropagation();
 					const file = ctx.app.vault.getAbstractFileByPath(link.path);
 					if (file && file instanceof TFile) {
-						void ctx.app.workspace.getLeaf().openFile(file);
+						const leaf = ctx.app.workspace.getMostRecentLeaf() ?? ctx.app.workspace.getLeaf('tab');
+						void leaf.openFile(file);
 					}
 				});
 			}

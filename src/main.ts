@@ -224,6 +224,9 @@ export default class TimelineNoteLauncherPlugin extends Plugin {
 			if (dataChanged) {
 				void this.syncAndSave();
 			}
+
+			// ターゲットファイルリストを事前にキャッシュして初回オープンを高速化
+			this.getTargetFiles();
 		});
 	}
 

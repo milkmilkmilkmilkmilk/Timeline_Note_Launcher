@@ -121,7 +121,7 @@ export class TimelineView extends ItemView {
 // 説明: 補助的な更新処理
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', (leaf) => {
-				if (leaf && leaf !== this.leaf && leaf.view.getViewType() !== TIMELINE_VIEW_TYPE) {
+				if (leaf && leaf !== this.leaf && leaf.view.getViewType() !== TIMELINE_VIEW_TYPE && this.isInRootSplit(leaf)) {
 					this.previousActiveLeaf = leaf;
 				}
 			})
@@ -129,40 +129,31 @@ export class TimelineView extends ItemView {
 
 // 説明: Leaf選択を調整する
 		const currentActive = this.app.workspace.getActiveViewOfType(ItemView)?.leaf;
-		if (currentActive && currentActive !== this.leaf && currentActive.view.getViewType() !== TIMELINE_VIEW_TYPE) {
+		if (currentActive && currentActive !== this.leaf && currentActive.view.getViewType() !== TIMELINE_VIEW_TYPE && this.isInRootSplit(currentActive)) {
 			this.previousActiveLeaf = currentActive;
 		}
 
 // 説明: キャッシュを更新する
 		const cached = this.plugin.getCachedTimelineCards();
 		if (cached) {
+			// キャッシュが有効な場合はそのまま表示し、再取得をスキップして高速化
 			this.cards = cached.cards;
 			this.cachedAllTags = collectAllTags(this.cards);
 			this.newCount = cached.newCount;
 			this.dueCount = cached.dueCount;
+			await this.render();
 		} else {
 // 説明: 補助的な更新処理
 			this.cards = [];
 			this.cachedAllTags = [];
 			this.newCount = 0;
 			this.dueCount = 0;
+			await this.render();
+			void this.refresh().catch((error: unknown) => {
+				console.error('Failed to refresh timeline:', error);
+				this.renderErrorState();
+			});
 		}
-
-// 説明: UIを描画する
-		await this.render();
-
-// 説明: UIを描画する
-		void this.refresh().catch((error: unknown) => {
-			console.error('Failed to refresh timeline:', error);
-			this.renderErrorState();
-		});
-	}
-
-	private renderLoadingState(): void {
-		this.listContainerEl.empty();
-		const loading = this.listContainerEl.createDiv({ cls: 'timeline-loading-indicator' });
-		loading.createSpan({ cls: 'timeline-loading-spinner' });
-		loading.createSpan({ cls: 'timeline-loading-text', text: 'Loading timeline...' });
 	}
 
 	private renderErrorState(): void {
@@ -282,15 +273,6 @@ export class TimelineView extends ItemView {
 		this.cachedAllTags = collectAllTags(this.cards);
 		this.newCount = result.newCount;
 		this.dueCount = result.dueCount;
-		if (this.plugin.data.settings.selectionMode === 'srs') {
-			try {
-				const latestCounts = await this.plugin.getLatestNewDueCounts();
-				this.newCount = latestCounts.newCount;
-				this.dueCount = latestCounts.dueCount;
-			} catch (error) {
-				console.error('Failed to recalculate timeline stats:', error);
-			}
-		}
 
 // 説明: UIを描画する
 		await this.render();
@@ -452,7 +434,13 @@ export class TimelineView extends ItemView {
 					sourcePath,
 					this.renderComponent
 				);
-// 説明: 補助的な更新処理
+				// white-space: pre-wrap 環境で <br>\n が二重改行にならないよう、<br> 直後の \n を除去
+				for (const br of Array.from(previewEl.querySelectorAll('br'))) {
+					const next = br.nextSibling;
+					if (next?.nodeType === Node.TEXT_NODE && (next.textContent ?? '').startsWith('\n')) {
+						next.textContent = (next.textContent ?? '').slice(1);
+					}
+				}
 				const placeholder = previewEl.querySelector('.timeline-card-preview-placeholder');
 				if (placeholder) placeholder.remove();
 				previewEl.removeClass('timeline-card-preview-pending');
@@ -571,6 +559,15 @@ export class TimelineView extends ItemView {
 
 		const rightSection = header.createDiv({ cls: 'timeline-header-right' });
 
+		const scrollBottomBtn = rightSection.createEl('button', {
+			cls: 'timeline-scroll-btn',
+			attr: { 'aria-label': 'Scroll to bottom' },
+		});
+		setIcon(scrollBottomBtn, 'chevrons-down');
+		scrollBottomBtn.addEventListener('click', () => {
+			this.listContainerEl.scrollTo({ top: this.listContainerEl.scrollHeight, behavior: 'smooth' });
+		});
+
 // 説明: UIを描画する
 		if (!Platform.isMobile) {
 			const isMobileView = settings.mobileViewOnDesktop;
@@ -623,12 +620,10 @@ export class TimelineView extends ItemView {
 		const initialCount = enableInfiniteScroll ? batchSize : this.filteredCards.length;
 		this.displayedCount = Math.min(initialCount, this.filteredCards.length);
 
-// 説明: フィルター状態を反映する
-		const { fragment, elements } = this.renderCardsToFragment(
+		// フレームを譲りながらチャンク単位で描画し、最初のカードを素早く表示する
+		this.cardElements = await this.appendCardsInChunks(
 			this.filteredCards.slice(0, this.displayedCount), isGridMode
 		);
-		this.cardElements = elements;
-		this.listEl.appendChild(fragment);
 		// DOM接続後にPDF埋め込みとMarkdownレンダリングを実行する
 		await Promise.all([
 			this.flushPendingEmbeds(),
@@ -651,6 +646,15 @@ export class TimelineView extends ItemView {
 			});
 			bottomRefreshBtn.addEventListener('click', () => { void this.refresh(); });
 		}
+
+		const scrollTopBtn = footer.createEl('button', {
+			cls: 'timeline-scroll-btn',
+			attr: { 'aria-label': 'Scroll to top' },
+		});
+		setIcon(scrollTopBtn, 'chevrons-up');
+		scrollTopBtn.addEventListener('click', () => {
+			this.listContainerEl.scrollTo({ top: 0, behavior: 'smooth' });
+		});
 
 // 説明: 補助的な更新処理
 		this.focusedIndex = -1;
@@ -808,6 +812,9 @@ export class TimelineView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((item) => item.setTitle('Refresh').onClick(() => { void this.refresh(); }));
 		menu.addItem((item) => item.setTitle('Open settings').onClick(() => this.openPluginSettings()));
+		menu.addItem((item) => item.setTitle('Scroll to top').onClick(() => {
+			this.listContainerEl.scrollTo({ top: 0, behavior: 'smooth' });
+		}));
 		menu.addItem((item) => item.setTitle('Scroll to bottom').onClick(() => {
 			this.listContainerEl.scrollTo({ top: this.listContainerEl.scrollHeight, behavior: 'smooth' });
 		}));
@@ -850,6 +857,9 @@ export class TimelineView extends ItemView {
 		if (settings.twitterRailDensity === 'full') {
 			this.createTwitterShortcutButton(container, 'refresh-cw', 'Refresh', () => { void this.refresh(); });
 			this.createTwitterShortcutButton(container, 'settings', 'Settings', () => this.openPluginSettings());
+			this.createTwitterShortcutButton(container, 'chevrons-up', 'Top', () => {
+				this.listContainerEl.scrollTo({ top: 0, behavior: 'smooth' });
+			});
 			this.createTwitterShortcutButton(container, 'chevrons-down', 'Bottom', () => {
 				this.listContainerEl.scrollTo({ top: this.listContainerEl.scrollHeight, behavior: 'smooth' });
 			});
@@ -1219,6 +1229,13 @@ export class TimelineView extends ItemView {
 	}
 
 	/**
+	 * 処理: LeafがrootSplit（メインエディタ領域）にあるか判定する
+	 */
+	private isInRootSplit(leaf: WorkspaceLeaf): boolean {
+		return leaf.getRoot() === this.app.workspace.rootSplit;
+	}
+
+	/**
 * 処理: 隔接Leafを探索する
 	  */
 	private findAdjacentLeaf(timelineLeaf: WorkspaceLeaf): WorkspaceLeaf | null {
@@ -1231,6 +1248,9 @@ export class TimelineView extends ItemView {
 
 // 説明: Leaf選択を調整する
 			if (leaf.view.getViewType() === TIMELINE_VIEW_TYPE) return;
+
+// 説明: サイドバー（左・右）のLeafを除外する
+			if (!this.isInRootSplit(leaf)) return;
 
 // 説明: Leaf選択を調整する
 			if (leaf.view.getViewType() === 'markdown') {
@@ -1371,6 +1391,15 @@ export class TimelineView extends ItemView {
 			});
 			bottomRefreshBtn.addEventListener('click', () => { void this.refresh(); });
 		}
+
+		const scrollTopBtn = footer.createEl('button', {
+			cls: 'timeline-scroll-btn',
+			attr: { 'aria-label': 'Scroll to top' },
+		});
+		setIcon(scrollTopBtn, 'chevrons-up');
+		scrollTopBtn.addEventListener('click', () => {
+			this.listContainerEl.scrollTo({ top: 0, behavior: 'smooth' });
+		});
 	}
 
 	/**

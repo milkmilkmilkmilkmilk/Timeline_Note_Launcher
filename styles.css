@@ -113,6 +113,30 @@
 	font-size: 24px;
 }
 
+.timeline-scroll-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border-radius: var(--timeline-radius-sm);
+	background: var(--background-modifier-hover);
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.timeline-scroll-btn:hover {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.timeline-footer .timeline-scroll-btn {
+	width: 48px;
+	height: 48px;
+	border-radius: var(--timeline-radius-md);
+}
+
 /* ===== フィルタバー ===== */
 .timeline-filter-bar {
 	display: flex;
@@ -883,6 +907,7 @@
 /* プレビュー内のマークダウン要素 — Obsidian の markdown-rendered CSS を上書きしない */
 .timeline-card-preview p {
 	margin: 0 0 0.5em 0;
+	white-space: pre-wrap;
 }
 
 .timeline-card-preview p:last-child {
