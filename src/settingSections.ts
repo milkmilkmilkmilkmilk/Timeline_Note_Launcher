@@ -644,8 +644,7 @@ export function buildSearchIndexSection(ctx: SettingSectionContext): void {
 
 	new Setting(ctx.containerEl)
 		.setName('Rebuild search index')
-		// eslint-disable-next-line obsidianmd/ui/sentence-case -- Japanese description, BM25 is algorithm name
-		.setDesc('全ノートを走査して BM25 検索索引を再構築します（時間がかかります）。')
+		.setDesc('Scan all notes and rebuild the search index (this may take some time).')
 		.addButton(button => button
 			.setButtonText(built ? 'Rebuild' : 'Build')
 			.setCta()
