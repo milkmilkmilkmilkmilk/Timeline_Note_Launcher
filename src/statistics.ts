@@ -7,6 +7,10 @@ import type {
 } from './types';
 import { getTodayString } from './types';
 
+function toFiniteNumber(value: unknown): number {
+	return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 /**
  * レビュー履歴を記録
  */
@@ -108,13 +112,13 @@ export function calculateStatistics(
 	// 基本統計
 	const totalNotes = entries.length;
 	const reviewedNotes = entries.filter(l => l.lastReviewedAt !== null).length;
-	const totalReviews = entries.reduce((sum, l) => sum + l.reviewCount, 0);
+	const totalReviews = entries.reduce((sum, l) => sum + toFiniteNumber(l.reviewCount), 0);
 	const dueToday = entries.filter(l => l.nextReviewAt !== null && l.nextReviewAt <= now).length;
 
 	// 今日の統計
 	const todayData = history[today];
-	const todayReviews = todayData?.reviewedCount ?? 0;
-	const todayNewReviews = todayData?.newReviewed ?? 0;
+	const todayReviews = toFiniteNumber(todayData?.reviewedCount);
+	const todayNewReviews = toFiniteNumber(todayData?.newReviewed);
 
 	// 週間統計
 	const weekAgo = new Date();
@@ -153,7 +157,7 @@ export function calculateStatistics(
 
 	for (const dateStr of dates) {
 		const data = history[dateStr];
-		const count = data?.reviewedCount ?? 0;
+		const count = toFiniteNumber(data?.reviewedCount);
 		heatmapData.push({ date: dateStr, count });
 
 		// 月間レビュー数を加算
@@ -162,7 +166,7 @@ export function calculateStatistics(
 		// ファイルタイプ別を加算
 		if (data?.fileTypes) {
 			for (const [type, cnt] of Object.entries(data.fileTypes)) {
-				fileTypeBreakdown[type as keyof typeof fileTypeBreakdown] += cnt;
+				fileTypeBreakdown[type as keyof typeof fileTypeBreakdown] += toFiniteNumber(cnt);
 			}
 		}
 	}
@@ -172,7 +176,7 @@ export function calculateStatistics(
 		const d = new Date();
 		d.setDate(d.getDate() - i);
 		const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-		weekReviews += history[dateStr]?.reviewedCount ?? 0;
+		weekReviews += toFiniteNumber(history[dateStr]?.reviewedCount);
 	}
 
 	// 連続レビュー日数（ストリーク）
